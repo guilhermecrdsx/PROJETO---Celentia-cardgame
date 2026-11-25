@@ -1,0 +1,8 @@
+{
+  "name": "Reinos em Guerra - TCG Estratégico",
+  "description": "Jogo de cartas de estratégia tática com combates por rodadas, elementos, poderes mágicos e os Reinos de Granty, Musmo e Naneya.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

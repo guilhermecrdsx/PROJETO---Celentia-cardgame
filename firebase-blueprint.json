@@ -1,0 +1,232 @@
+{
+  "entities": {
+    "PatchNoteRelease": {
+      "title": "PatchNoteRelease",
+      "description": "Published version release and categorized changelog notes visible to all players.",
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[vV]?[0-9]+\\.[0-9]+(\\.[0-9]+)?(-[a-zA-Z0-9.]+)?$",
+          "description": "Semantic version label such as v1.4.0"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Release headline title"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 800,
+          "description": "Editorial summary of the release"
+        },
+        "releaseDate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Human-readable release date"
+        },
+        "isCurrent": {
+          "type": "boolean",
+          "description": "Whether this release is the highlighted active version"
+        },
+        "isPublished": {
+          "type": "boolean",
+          "description": "Explicit publication marker for secure public queries"
+        },
+        "entries": {
+          "type": "array",
+          "description": "Bounded list (max 40) of categorized patch note items"
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when first published"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest update"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Admin UID who published or edited the release"
+        }
+      },
+      "required": [
+        "version",
+        "title",
+        "summary",
+        "releaseDate",
+        "isCurrent",
+        "isPublished",
+        "entries",
+        "publishedAt",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    "PatchNoteDraft": {
+      "title": "PatchNoteDraft",
+      "description": "Private admin-only draft of upcoming patch notes before public publication.",
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24,
+          "pattern": "^[vV]?[0-9]+\\.[0-9]+(\\.[0-9]+)?(-[a-zA-Z0-9.]+)?$",
+          "description": "Target semantic version label"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Draft headline title"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 800,
+          "description": "Draft summary text"
+        },
+        "releaseDate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Target release date label"
+        },
+        "entries": {
+          "type": "array",
+          "description": "Bounded list (max 40) of draft changelog entries"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest draft save"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Admin UID who saved the draft"
+        }
+      },
+      "required": [
+        "version",
+        "title",
+        "summary",
+        "releaseDate",
+        "entries",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Optional trusted admin registry entry.",
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "description": "Fixed admin role marker"
+        }
+      },
+      "required": ["role"]
+    },
+    "ModeQueuesConfig": {
+      "title": "ModeQueuesConfig",
+      "description": "Global availability switches and optional maintenance notices for each game mode queue.",
+      "type": "object",
+      "properties": {
+        "pvp_ranked": {
+          "type": "object",
+          "description": "Availability status for Ranked PvP queue"
+        },
+        "pvp_normal": {
+          "type": "object",
+          "description": "Availability status for Normal PvP queue"
+        },
+        "pvia": {
+          "type": "object",
+          "description": "Availability status for PvIA solo queue"
+        },
+        "testing_arena": {
+          "type": "object",
+          "description": "Availability status for Testing Arena sandbox"
+        },
+        "tutorial": {
+          "type": "object",
+          "description": "Availability status for Interactive Tutorial mode"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest queue configuration update"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Verified Admin UID who updated the queue states"
+        }
+      },
+      "required": [
+        "pvp_ranked",
+        "pvp_normal",
+        "pvia",
+        "testing_arena",
+        "tutorial",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    "RankPolicyConfig": {
+      "title": "RankPolicyConfig",
+      "description": "Global ranked progression lock configuration allowing administrators to cap visible rank below a target tier while points keep accumulating.",
+      "type": "object",
+      "properties": {
+        "blockedFromTier": {
+          "type": "string",
+          "enum": ["none", "Bronze", "Prata", "Ouro", "Platina", "Diamante", "Celestial"],
+          "description": "Tier from which progression is capped globally, or 'none' when unlocked"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest rank policy update"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Verified Admin UID who updated the global rank policy"
+        }
+      },
+      "required": ["blockedFromTier", "updatedAt", "updatedBy"]
+    }
+  },
+  "firestore": {
+    "/patch_notes/{releaseId}": {
+      "schema": { "$ref": "#/entities/PatchNoteRelease" },
+      "description": "Publicly readable published patch note releases (current version and chronological history). Only verified admin can create, update, or delete."
+    },
+    "/patch_drafts/{draftId}": {
+      "schema": { "$ref": "#/entities/PatchNoteDraft" },
+      "description": "Private patch notes drafts accessible exclusively by verified admin."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Read-own-only admin lookup documents. Client writes are always forbidden."
+    },
+    "/game_config/{configId}": {
+      "schema": { "$ref": "#/entities/ModeQueuesConfig" },
+      "description": "Global game configuration documents (mode_queues and rank_policy). Public get for all clients; verified admin-only create/update."
+    }
+  }
+}

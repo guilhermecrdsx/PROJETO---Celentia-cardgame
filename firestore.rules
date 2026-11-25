@@ -1,0 +1,234 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Hardened Global Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'guilhermecrds84@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidVersion(val) {
+      return val is string &&
+        val.size() >= 1 &&
+        val.size() <= 24 &&
+        val.matches('^[vV]?[0-9]+\\.[0-9]+(\\.[0-9]+)?(-[a-zA-Z0-9.]+)?$');
+    }
+
+    function isValidEntryItem(item) {
+      return item is map &&
+        item.keys().hasAll(['id', 'category', 'text']) &&
+        item.keys().hasOnly(['id', 'category', 'text']) &&
+        item.id is string && item.id.size() >= 1 && item.id.size() <= 64 &&
+        item.category is string && item.category in ['feature', 'balance', 'ui_mobile', 'fix'] &&
+        item.text is string && item.text.size() >= 1 && item.text.size() <= 280;
+    }
+
+    function isValidEntriesList(entries) {
+      return entries is list &&
+        entries.size() <= 40 &&
+        (entries.size() == 0 || isValidEntryItem(entries[0]));
+    }
+
+    function isValidPatchNoteRelease(data) {
+      return data.keys().hasAll([
+          'version', 'title', 'summary', 'releaseDate',
+          'isCurrent', 'isPublished', 'entries',
+          'publishedAt', 'updatedAt', 'updatedBy'
+        ]) &&
+        data.keys().hasOnly([
+          'version', 'title', 'summary', 'releaseDate',
+          'isCurrent', 'isPublished', 'entries',
+          'publishedAt', 'updatedAt', 'updatedBy'
+        ]) &&
+        isValidVersion(data.version) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.summary is string && data.summary.size() <= 800 &&
+        data.releaseDate is string && data.releaseDate.size() >= 1 && data.releaseDate.size() <= 32 &&
+        data.isCurrent is bool &&
+        data.isPublished == true &&
+        isValidEntriesList(data.entries) &&
+        data.publishedAt is timestamp &&
+        data.updatedAt == request.time &&
+        data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+        data.updatedBy == request.auth.uid;
+    }
+
+    function isValidPatchNoteDraft(data) {
+      return data.keys().hasAll([
+          'version', 'title', 'summary', 'releaseDate',
+          'entries', 'updatedAt', 'updatedBy'
+        ]) &&
+        data.keys().hasOnly([
+          'version', 'title', 'summary', 'releaseDate',
+          'entries', 'updatedAt', 'updatedBy'
+        ]) &&
+        isValidVersion(data.version) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.summary is string && data.summary.size() <= 800 &&
+        data.releaseDate is string && data.releaseDate.size() >= 1 && data.releaseDate.size() <= 32 &&
+        isValidEntriesList(data.entries) &&
+        data.updatedAt == request.time &&
+        data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+        data.updatedBy == request.auth.uid;
+    }
+
+    // --- Collection 1: Published Patch Notes (Public Read, Admin Write) ---
+    match /patch_notes/{releaseId} {
+      allow get: if isValidId(releaseId) && existing().isPublished == true;
+      allow list: if resource.data.isPublished == true;
+
+      allow create: if isSignedIn() &&
+        isValidId(releaseId) &&
+        isValidPatchNoteRelease(incoming()) &&
+        incoming().publishedAt == request.time &&
+        isAdmin();
+
+      allow update: if isSignedIn() &&
+        isValidId(releaseId) &&
+        isValidPatchNoteRelease(incoming()) &&
+        incoming().publishedAt == existing().publishedAt &&
+        isAdmin() && (
+          // Action: Archive/Toggle current release flag
+          incoming().diff(existing()).affectedKeys().hasOnly(['isCurrent', 'updatedAt', 'updatedBy']) ||
+          // Action: Admin full content edit of a published release
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'version', 'title', 'summary', 'releaseDate',
+            'isCurrent', 'entries', 'updatedAt', 'updatedBy'
+          ])
+        );
+
+      allow delete: if isSignedIn() && isValidId(releaseId) && isAdmin();
+    }
+
+    // --- Collection 2: Private Admin Drafts (Admin-Only Read & Write) ---
+    match /patch_drafts/{draftId} {
+      allow get: if isSignedIn() && isValidId(draftId) && isAdmin();
+      allow list: if isSignedIn() && resource.data.updatedBy == request.auth.uid && isAdmin();
+
+      allow create: if isSignedIn() &&
+        isValidId(draftId) &&
+        isValidPatchNoteDraft(incoming()) &&
+        isAdmin();
+
+      allow update: if isSignedIn() &&
+        isValidId(draftId) &&
+        isValidPatchNoteDraft(incoming()) &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'version', 'title', 'summary', 'releaseDate',
+          'entries', 'updatedAt', 'updatedBy'
+        ]);
+
+      allow delete: if isSignedIn() && isValidId(draftId) && isAdmin();
+    }
+
+    function isValidModeQueueItem(item) {
+      return item is map &&
+        item.keys().hasAll(['enabled', 'reason']) &&
+        item.keys().hasOnly(['enabled', 'reason']) &&
+        item.enabled is bool &&
+        item.reason is string &&
+        item.reason.size() <= 140;
+    }
+
+    function isValidModeQueuesConfig(data) {
+      return data.keys().hasAll([
+          'pvp_ranked', 'pvp_normal', 'pvia', 'testing_arena', 'tutorial',
+          'updatedAt', 'updatedBy'
+        ]) &&
+        data.keys().hasOnly([
+          'pvp_ranked', 'pvp_normal', 'pvia', 'testing_arena', 'tutorial',
+          'updatedAt', 'updatedBy'
+        ]) &&
+        isValidModeQueueItem(data.pvp_ranked) &&
+        isValidModeQueueItem(data.pvp_normal) &&
+        isValidModeQueueItem(data.pvia) &&
+        isValidModeQueueItem(data.testing_arena) &&
+        isValidModeQueueItem(data.tutorial) &&
+        data.updatedAt == request.time &&
+        data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+        data.updatedBy == request.auth.uid;
+    }
+
+    function isValidRankPolicyConfig(data) {
+      return data.keys().hasAll(['blockedFromTier', 'updatedAt', 'updatedBy']) &&
+        data.keys().hasOnly(['blockedFromTier', 'updatedAt', 'updatedBy']) &&
+        data.blockedFromTier is string &&
+        data.blockedFromTier in ['none', 'Bronze', 'Prata', 'Ouro', 'Platina', 'Diamante', 'Celestial'] &&
+        data.updatedAt == request.time &&
+        data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+        data.updatedBy == request.auth.uid;
+    }
+
+    // --- Collection 3: Trusted Admin Registry (No Client Writes) ---
+    match /admins/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // --- Collection 4: Global Game Config (Public Get, Verified Admin Write) ---
+    match /game_config/{configId} {
+      allow get: if isValidId(configId) && configId in ['mode_queues', 'rank_policy'];
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+        isValidId(configId) &&
+        isAdmin() && (
+          (configId == 'mode_queues' && isValidModeQueuesConfig(incoming())) ||
+          (configId == 'rank_policy' && isValidRankPolicyConfig(incoming()))
+        );
+
+      allow update: if isSignedIn() &&
+        isValidId(configId) &&
+        isAdmin() && (
+          (
+            configId == 'mode_queues' &&
+            isValidModeQueuesConfig(incoming()) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'pvp_ranked', 'pvp_normal', 'pvia', 'testing_arena', 'tutorial',
+              'updatedAt', 'updatedBy'
+            ])
+          ) ||
+          (
+            configId == 'rank_policy' &&
+            isValidRankPolicyConfig(incoming()) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'blockedFromTier', 'updatedAt', 'updatedBy'
+            ])
+          )
+        );
+
+      allow delete: if false;
+    }
+  }
+}
