@@ -175,7 +175,7 @@ const ELEMENT_VFX_CONFIG: Record<
     particleCount: 42,
     speed: 5.0,
     decay: 0.022,
-    titleIcon: '⚔️',
+    titleIcon: '🧭',
     label: 'Neutro',
   },
   Nenhum: {

@@ -4,9 +4,10 @@ import { CardInstance } from '../types/game';
 import { TIER_CONFIG, ELEMENT_CONFIG, getCardArtCandidates, getThematicCardArt } from '../utils/cardVisuals';
 import { getCardConditionItems } from '../utils/conditionEffectsConfig';
 import { getCardClasses } from '../logic/combat';
-import { useVisualPreferences } from '../utils/visualTheme';
+import { CardBackTheme, useVisualPreferences } from '../utils/visualTheme';
 import { getForgedPalette } from '../utils/cardForgeTheme';
 import { CardFiligreeCorners, CardFiligreeDivider, FacetedGemMedallion } from './CardFiligreeSVG';
+import { CardBackArt } from './CardBackArt';
 
 interface CardViewProps {
   card: CardInstance;
@@ -31,6 +32,7 @@ interface CardViewProps {
   actionLabel?: string;
   badgeText?: string;
   hasOVazioActive?: boolean;
+  cardBackOverride?: CardBackTheme;
 }
 
 export const CardView: React.FC<CardViewProps> = ({
@@ -55,6 +57,7 @@ export const CardView: React.FC<CardViewProps> = ({
   onInspect,
   actionLabel,
   badgeText,
+  cardBackOverride,
 }) => {
   const [imageError, setImageError] = useState(false);
   const [artCandidateIndex, setArtCandidateIndex] = useState(0);
@@ -93,54 +96,18 @@ export const CardView: React.FC<CardViewProps> = ({
 
   // If face-down in opponent's hand
   if (isOpponentHand) {
-    const cardBackThemes = {
-      royal_gold: {
-        outer: 'border-amber-700/90 from-stone-900 via-stone-950 to-stone-900',
-        inner: 'border-amber-500/40 bg-stone-950/90',
-        badge: 'border-amber-400/60 bg-amber-950/70 text-amber-300',
-        icon: '⚜️',
-        title: 'Reinos',
-      },
-      angiris_wings: {
-        outer: 'border-yellow-400/90 from-amber-950 via-stone-950 to-yellow-950',
-        inner: 'border-yellow-300/40 bg-stone-950/90',
-        badge: 'border-yellow-300/70 bg-amber-900/70 text-yellow-200',
-        icon: '🪽',
-        title: 'Angiris',
-      },
-      cosmic_void: {
-        outer: 'border-indigo-500/90 from-indigo-950 via-slate-950 to-purple-950',
-        inner: 'border-indigo-400/40 bg-slate-950/90',
-        badge: 'border-indigo-400/70 bg-indigo-950/70 text-indigo-200',
-        icon: '🔮',
-        title: 'Cósmico',
-      },
-      crimson_war: {
-        outer: 'border-rose-600/90 from-rose-950 via-stone-950 to-red-950',
-        inner: 'border-rose-500/40 bg-stone-950/90',
-        badge: 'border-rose-400/70 bg-rose-950/70 text-rose-200',
-        icon: '🐉',
-        title: 'Granty',
-      },
-    };
-    const activeBack = cardBackThemes[cardBack] || cardBackThemes.royal_gold;
+    const dimClass =
+      size === 'sm' ? 'w-28 h-44' : size === 'lg' ? 'w-64 h-96' : 'w-44 h-64';
 
     return (
-      <div
-        className={`relative rounded-2xl border-[3px] bg-gradient-to-br ${activeBack.outer} shadow-2xl flex flex-col items-center justify-center cursor-default select-none transition-transform hover:-translate-y-1 ${
-          size === 'sm' ? 'w-28 h-44' : size === 'lg' ? 'w-64 h-96' : 'w-44 h-64'
-        } ${isNewDrawn ? 'animate-in fade-in slide-in-from-top-6 duration-300' : ''}`}
-      >
-        <div className={`absolute inset-1.5 rounded-xl border-2 ${activeBack.inner} flex flex-col items-center justify-center p-2 text-center`}>
-          <div className={`w-10 h-10 rounded-full border ${activeBack.badge} flex items-center justify-center font-serif text-base shadow-[0_0_15px_rgba(245,158,11,0.2)]`}>
-            {activeBack.icon}
-          </div>
-          <span className="text-[11px] uppercase font-black tracking-widest text-amber-400/90 mt-2 font-serif">
-            {activeBack.title}
-          </span>
-          <span className="text-[9px] text-stone-500 font-mono mt-0.5">Mão Oponente</span>
-        </div>
-      </div>
+      <CardBackArt
+        theme={cardBackOverride ?? cardBack}
+        context="live"
+        compact={size === 'sm'}
+        className={`${dimClass} rounded-2xl shadow-2xl cursor-default transition-transform ${
+          isNewDrawn ? 'animate-in fade-in slide-in-from-top-6 duration-300' : ''
+        }`}
+      />
     );
   }
 
@@ -171,6 +138,7 @@ export const CardView: React.FC<CardViewProps> = ({
     card.templateId === 'm_fanx' ||
     card.templateId === 'g_kaliel' ||
     card.templateId === 'm_faleziel' ||
+    card.name.toLowerCase().includes('fanael') ||
     card.name.toLowerCase().includes('kaliel') ||
     card.name.toLowerCase().includes('faleziel');
   const hasLevelSystem =
@@ -289,7 +257,7 @@ export const CardView: React.FC<CardViewProps> = ({
         gemColors = { top: '#e9d5ff', mid: '#a855f7', bottom: '#3b0764', glow: 'rgba(168,85,247,0.55)' };
         break;
       case 'Neutro':
-        elemIcon = '⚜';
+        elemIcon = '🧭';
         elemText = 'Neutro';
         elemTextColor = 'text-stone-200';
         gemColors = { top: '#e7e5e4', mid: '#78716c', bottom: '#292524', glow: 'rgba(168,162,158,0.45)' };

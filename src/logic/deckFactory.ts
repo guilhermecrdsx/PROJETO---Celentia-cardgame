@@ -355,13 +355,13 @@ export const TUTORIAL_PLAYER_DECK_IDS: string[] = [
   'm_inariel', 'g_bronx',
 ];
 
-// Baralho facilitado do Instrutor Celentia no Tutorial (permite combate real de ataque e defesa, mas garante vitória justa do aprendiz)
+// Baralho facilitado do Instrutor Celentia no Tutorial (100% unidades aptas a atacar para prática real de defesa, garantindo vitória justa do aprendiz)
 export const TUTORIAL_INSTRUCTOR_DECK_IDS: string[] = [
   'm_celia', 'm_celia',
   'n_cristalys', 'n_cristalys',
   'n_vanusa', 'n_vanusa',
   'm_finn', 'm_finn',
-  'n_pedrinha', 'n_pedrinha',
+  'm_mara', 'm_mara',
   'm_gough', 'm_gough',
   'g_glauco', 'g_glauco',
   'n_kyn', 'n_kyn',

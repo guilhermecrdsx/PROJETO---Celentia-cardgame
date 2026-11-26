@@ -309,12 +309,13 @@ const CelestialAscensionSeal: React.FC<{
       aria-hidden="true"
       className={`pointer-events-none absolute inset-0 flex items-center justify-center transition-all duration-700 ease-out ${ringScale}`}
     >
-      {/* Atmospheric Radial Bloom */}
+      {/* Atmospheric Smoky Radial Bloom — wide multi-stop falloff so glow dissipates organically into distance */}
       <div
-        className="absolute w-[340px] h-[340px] sm:w-[460px] sm:h-[460px] rounded-full blur-3xl transition-opacity duration-700"
+        className="absolute w-[480px] h-[480px] sm:w-[680px] sm:h-[680px] lg:w-[780px] lg:h-[780px] rounded-full transition-opacity duration-700"
         style={{
-          background: `radial-gradient(circle, ${theme.glowRgba} 0%, ${theme.secondaryGlowRgba} 42%, transparent 72%)`,
-          opacity: isClimaxOrRevealed ? 0.9 : 0.45,
+          background: `radial-gradient(circle, ${theme.glowRgba} 0%, ${theme.secondaryGlowRgba} 24%, ${theme.primary}26 44%, ${theme.secondary}10 60%, transparent 74%)`,
+          filter: 'blur(38px)',
+          opacity: isClimaxOrRevealed ? 0.92 : 0.5,
         }}
       />
 
@@ -838,6 +839,18 @@ export const LevelUpCinematicOverlay: React.FC<LevelUpCinematicOverlayProps> = (
         background: `radial-gradient(ellipse at 50% 45%, ${theme.voidStart} 0%, ${theme.voidMid} 55%, ${theme.voidEdge} 100%)`,
       }}
     >
+      {/* Full-Viewport Unclipped Ambient Aura Layer (dissipates smoothly across the entire screen) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0 transition-opacity duration-700"
+        style={{
+          background: isRevealed
+            ? `radial-gradient(circle at 35% 50%, ${theme.primary}38 0%, ${theme.secondary}22 20%, ${theme.primary}10 38%, transparent 66%)`
+            : `radial-gradient(circle at 50% 50%, ${theme.primary}34 0%, ${theme.secondary}1a 22%, transparent 60%)`,
+          opacity: isClimax || isRevealed ? 1 : 0.65,
+        }}
+      />
+
       {/* Top & Bottom Cinema Letterbox Bars */}
       <div
         aria-hidden="true"
@@ -929,19 +942,21 @@ export const LevelUpCinematicOverlay: React.FC<LevelUpCinematicOverlayProps> = (
 
       {/* ==================================================================== */}
       {/* CENTER THEATRICAL STAGE (CARD SHOWCASE + AWAKENED EDITORIAL PANEL)   */}
+      {/* Full-bleed scroll wrapper + overflow-visible stage prevents any glow clipping */}
       {/* ==================================================================== */}
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={`relative z-20 w-full max-w-5xl max-h-[calc(100dvh-5.5rem)] overflow-y-auto px-4 sm:px-8 py-4 flex flex-col items-center justify-center transition-all duration-700 ${
-          isRevealed ? 'md:flex-row md:items-center md:justify-center md:gap-10 lg:gap-14' : ''
-        }`}
-      >
-        {/* LEFT / CENTER COLUMN: ILLUMINATED CARD STAGE + CELESTIAL SEAL */}
+      <div className="relative z-20 w-full h-full overflow-y-auto overflow-x-hidden flex items-center justify-center pt-10 pb-10 sm:pt-14 sm:pb-14">
         <div
-          className="relative flex flex-col items-center justify-center shrink-0 py-3 sm:py-5"
-          onPointerMove={handleCardPointerMove}
-          onPointerLeave={resetCardTilt}
+          onClick={(e) => e.stopPropagation()}
+          className={`relative w-full max-w-5xl overflow-visible px-4 sm:px-8 py-6 sm:py-10 my-auto flex flex-col items-center justify-center transition-all duration-700 ${
+            isRevealed ? 'md:flex-row md:items-center md:justify-center md:gap-10 lg:gap-14' : ''
+          }`}
         >
+          {/* LEFT / CENTER COLUMN: ILLUMINATED CARD STAGE + CELESTIAL SEAL */}
+          <div
+            className="relative overflow-visible flex flex-col items-center justify-center shrink-0 py-3 sm:py-5"
+            onPointerMove={handleCardPointerMove}
+            onPointerLeave={resetCardTilt}
+          >
           <CelestialAscensionSeal
             theme={theme}
             phase={phase}
@@ -1093,6 +1108,7 @@ export const LevelUpCinematicOverlay: React.FC<LevelUpCinematicOverlayProps> = (
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

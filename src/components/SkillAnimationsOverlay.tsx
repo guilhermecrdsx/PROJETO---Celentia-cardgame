@@ -2829,82 +2829,166 @@ export const SkillAnimationsOverlay: React.FC<SkillAnimationsOverlayProps> = ({
       }
 
       // ========================================================================
-      // 20. FLECHA ELÉTRICA — Arco de Plasma & Flecha de Eletricidade no Alvo
+      // 20. FLECHA ELÉTRICA DE GOUGH (MODERNIZADA) — Arco Tempestuoso, Bobinas de Carga e Impacto Voltaico
       // ========================================================================
       else if (vfx.skillType === 'token_flecha_eletrica') {
-        // Ponto de origem do disparo (lado oposto ao alvo para cruzar a arena com clareza)
-        const startX = Math.max(width * 0.18, targetX - 310);
-        const startY = vfx.targetSide === 'opponent' ? Math.min(height * 0.78, targetY + 290) : Math.max(height * 0.22, targetY - 290);
+        const startX = Math.max(width * 0.16, targetX - 330);
+        const startY =
+          vfx.targetSide === 'opponent'
+            ? Math.min(height * 0.8, targetY + 300)
+            : Math.max(height * 0.2, targetY - 300);
         const bowAngle = Math.atan2(targetY - startY, targetX - startX);
 
-        // Fase 1: Tensão do Arco Elétrico (0 -> 0.24), Fase 2: Voo Fulminante (0.20 -> 0.42), Fase 3: Explosão Voltaica no Alvo (0.40 -> 1.0)
-        const bowAlpha = progress < 0.48 ? Math.min(1, progress / 0.12) * (1 - Math.max(0, (progress - 0.32) / 0.16)) : 0;
-        const pullAmount = progress < 0.22 ? (progress / 0.22) * 38 : 0;
+        // Fase 1: Tensão e sobrecarga do Arco Tempestuoso (0 -> 0.24)
+        // Fase 2: Disparo hipersônico com anéis de plasma (0.18 -> 0.42)
+        // Fase 3: Descarga voltaica em rede e onda de choque no alvo (0.39 -> 1.0)
+        const bowAlpha =
+          progress < 0.48
+            ? Math.min(1, progress / 0.1) * (1 - Math.max(0, (progress - 0.3) / 0.18))
+            : 0;
+        const chargeT = Math.min(1, progress / 0.2);
+        const pullAmount = progress < 0.2 ? chargeT * 42 : Math.max(0, 42 * (1 - (progress - 0.2) / 0.08));
 
-        // Desenha o Arco de Plasma Elétrico na origem
         if (bowAlpha > 0.01) {
           ctx.save();
           ctx.translate(startX, startY);
           ctx.rotate(bowAngle);
           ctx.globalAlpha = bowAlpha * masterAlpha;
 
-          // Halo energético do arco
-          const bowGlow = ctx.createRadialGradient(0, 0, 6, 0, 0, 75);
-          bowGlow.addColorStop(0, 'rgba(224, 242, 254, 0.85)');
-          bowGlow.addColorStop(0.5, 'rgba(34, 211, 238, 0.35)');
+          // Halo eletromagnético atrás do arco
+          const bowGlow = ctx.createRadialGradient(0, 0, 8, 0, 0, 92);
+          bowGlow.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+          bowGlow.addColorStop(0.35, 'rgba(56, 189, 248, 0.55)');
+          bowGlow.addColorStop(0.7, 'rgba(250, 204, 21, 0.22)');
           bowGlow.addColorStop(1, 'transparent');
           ctx.fillStyle = bowGlow;
           ctx.beginPath();
-          ctx.arc(0, 0, 75, 0, Math.PI * 2);
+          ctx.arc(0, 0, 92, 0, Math.PI * 2);
           ctx.fill();
 
-          // Limbo curvo do Arco Voltaico
-          ctx.strokeStyle = '#e0f2fe';
-          ctx.lineWidth = 5;
-          ctx.shadowColor = '#22d3ee';
-          ctx.shadowBlur = 24;
-          ctx.beginPath();
-          ctx.arc(-18, 0, 58, -Math.PI * 0.42, Math.PI * 0.42);
-          ctx.stroke();
-
-          // Corda de laser elétrico tracionada
-          const tipTopX = -18 + Math.cos(-Math.PI * 0.42) * 58;
-          const tipTopY = Math.sin(-Math.PI * 0.42) * 58;
-          const tipBotX = -18 + Math.cos(Math.PI * 0.42) * 58;
-          const tipBotY = Math.sin(Math.PI * 0.42) * 58;
+          // Anel rúnico de mira giratório à frente do arco
+          ctx.save();
+          ctx.translate(32, 0);
+          ctx.scale(0.38, 1);
           ctx.strokeStyle = '#fde047';
           ctx.lineWidth = 2.5;
+          ctx.shadowColor = '#facc15';
+          ctx.shadowBlur = 16;
           ctx.beginPath();
-          ctx.moveTo(tipTopX, tipTopY);
-          ctx.lineTo(-pullAmount, 0);
-          ctx.lineTo(tipBotX, tipBotY);
+          ctx.arc(0, 0, 38 + (1 - chargeT) * 18, 0, Math.PI * 2);
           ctx.stroke();
+          ctx.restore();
+
+          // Limbo duplo recurvo do Arco de Gough
+          ctx.strokeStyle = '#bae6fd';
+          ctx.lineWidth = 6.5;
+          ctx.shadowColor = '#06b6d4';
+          ctx.shadowBlur = 26;
+          ctx.beginPath();
+          ctx.moveTo(-16, -64);
+          ctx.bezierCurveTo(22, -46, 32, -18, 22, 0);
+          ctx.bezierCurveTo(32, 18, 22, 46, -16, 64);
+          ctx.stroke();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2.4;
+          ctx.beginPath();
+          ctx.moveTo(-16, -64);
+          ctx.bezierCurveTo(22, -46, 32, -18, 22, 0);
+          ctx.bezierCurveTo(32, 18, 22, 46, -16, 64);
+          ctx.stroke();
+
+          // Corda de plasma tensionada com vibração elétrica
+          ctx.strokeStyle = '#fde047';
+          ctx.lineWidth = 2.8;
+          ctx.shadowColor = '#fde047';
+          ctx.shadowBlur = 16;
+          ctx.beginPath();
+          ctx.moveTo(-16, -64);
+          ctx.lineTo(-16 - pullAmount, 0);
+          ctx.lineTo(-16, 64);
+          ctx.stroke();
+
+          // Faíscas convergindo na ponta da flecha durante o carregamento
+          for (let sp = 0; sp < 8; sp++) {
+            const a = (sp / 8) * Math.PI * 2 + timeSec * 7;
+            const d = (1 - chargeT) * 44 + 8;
+            ctx.fillStyle = sp % 2 === 0 ? '#ffffff' : '#fde047';
+            ctx.beginPath();
+            ctx.arc(20 + Math.cos(a) * d, Math.sin(a) * d, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
           ctx.restore();
         }
 
-        // Voo da Flecha de Eletricidade (progress 0.16 -> 0.44)
-        const flightT = Math.min(1, Math.max(0, (progress - 0.16) / 0.26));
-        const easeFlight = 1 - Math.pow(1 - flightT, 2);
+        // Voo supersônico da Flecha Elétrica (0.17 -> 0.41)
+        const flightT = Math.min(1, Math.max(0, (progress - 0.17) / 0.24));
+        const easeFlight = 1 - Math.pow(1 - flightT, 3);
         const arrowX = startX + (targetX - startX) * easeFlight;
         const arrowY = startY + (targetY - startY) * easeFlight;
 
-        // Trilha de Relâmpago Ramificado ligando o disparo até a flecha/alvo
-        if (progress >= 0.16 && progress <= 0.82) {
-          const trailFade = progress < 0.44 ? 1 : Math.max(0, 1 - (progress - 0.44) / 0.38);
+        // Anéis sônicos de propulsão ao longo do trajeto
+        if (progress >= 0.17 && progress <= 0.62) {
+          const ringFade = progress < 0.42 ? 1 : Math.max(0, 1 - (progress - 0.42) / 0.2);
+          for (let r = 0; r < 3; r++) {
+            const frac = 0.24 + r * 0.26;
+            if (easeFlight < frac) continue;
+            const rx = startX + (targetX - startX) * frac;
+            const ry = startY + (targetY - startY) * frac;
+            const grow = Math.min(1, (easeFlight - frac) * 3.2);
+            ctx.save();
+            ctx.translate(rx, ry);
+            ctx.rotate(bowAngle);
+            ctx.scale(0.32, 1);
+            ctx.globalAlpha = (1 - grow * 0.75) * ringFade * masterAlpha;
+            ctx.strokeStyle = r === 1 ? '#fde047' : '#67e8f9';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#22d3ee';
+            ctx.shadowBlur = 16;
+            ctx.beginPath();
+            ctx.arc(0, 0, 14 + grow * 36, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        // Rastro de plasma + 3 relâmpagos entrelaçados ligando o arco ao projétil
+        if (progress >= 0.17 && progress <= 0.8) {
+          const trailFade = progress < 0.42 ? 1 : Math.max(0, 1 - (progress - 0.42) / 0.38);
           ctx.save();
           ctx.globalAlpha = trailFade * masterAlpha;
+
+          // Feixe central de ionização
+          const beamGrad = ctx.createLinearGradient(startX, startY, arrowX, arrowY);
+          beamGrad.addColorStop(0, 'rgba(34, 211, 238, 0)');
+          beamGrad.addColorStop(0.55, 'rgba(56, 189, 248, 0.55)');
+          beamGrad.addColorStop(1, 'rgba(255, 255, 255, 0.95)');
+          ctx.strokeStyle = beamGrad;
+          ctx.lineWidth = 10 * trailFade;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(arrowX, arrowY);
+          ctx.stroke();
+
+          // 3 filamentos de raio sinuosos/quebrados
           for (let b = 0; b < 3; b++) {
             ctx.strokeStyle = b === 0 ? '#ffffff' : b === 1 ? '#22d3ee' : '#fde047';
-            ctx.lineWidth = b === 0 ? 4.5 : 2.2;
-            ctx.shadowColor = '#22d3ee';
-            ctx.shadowBlur = 22;
+            ctx.lineWidth = b === 0 ? 4 : 2.1;
+            ctx.shadowColor = b === 2 ? '#facc15' : '#22d3ee';
+            ctx.shadowBlur = 20;
             ctx.beginPath();
-            const segs = 14;
+            const segs = 16;
             for (let s = 0; s <= segs; s++) {
               const st = s / segs;
               const bx = startX + (arrowX - startX) * st;
               const by = startY + (arrowY - startY) * st;
-              const jitter = s === 0 || s === segs ? 0 : Math.sin(timeSec * 45 + s * 2.7 + b * 1.9) * (14 + b * 6);
+              const envelope = Math.sin(st * Math.PI);
+              const jitter =
+                s === 0 || s === segs
+                  ? 0
+                  : Math.sin(timeSec * 52 + s * 2.9 + b * 2.1) * (15 + b * 7) * envelope;
               const perpX = -Math.sin(bowAngle) * jitter;
               const perpY = Math.cos(bowAngle) * jitter;
               if (s === 0) ctx.moveTo(bx, by);
@@ -2915,105 +2999,127 @@ export const SkillAnimationsOverlay: React.FC<SkillAnimationsOverlayProps> = ({
           ctx.restore();
         }
 
-        // Desenha a Flecha de Eletricidade em si (enquanto voa e cravada no alvo)
-        if (progress >= 0.08 && progress <= 0.78) {
-          const arrowAlpha = progress < 0.55 ? 1 : Math.max(0, 1 - (progress - 0.55) / 0.23);
+        // Projétil Flecha de Plasma Tempestuoso (durante carregamento, voo e cravada no alvo)
+        if (progress >= 0.05 && progress <= 0.78) {
+          const arrowAlpha = progress < 0.54 ? 1 : Math.max(0, 1 - (progress - 0.54) / 0.24);
+          const posX = progress < 0.17 ? startX - Math.cos(bowAngle) * pullAmount * 0.55 : arrowX;
+          const posY = progress < 0.17 ? startY - Math.sin(bowAngle) * pullAmount * 0.55 : arrowY;
           ctx.save();
-          ctx.translate(arrowX, arrowY);
+          ctx.translate(posX, posY);
           ctx.rotate(bowAngle);
           ctx.globalAlpha = arrowAlpha * masterAlpha;
 
-          // Haste de plasma ciano/branco
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 5;
-          ctx.shadowColor = '#06b6d4';
+          // Brilho envolvente da haste
+          const shaftGrad = ctx.createLinearGradient(-74, 0, 44, 0);
+          shaftGrad.addColorStop(0, '#38bdf8');
+          shaftGrad.addColorStop(0.65, '#ffffff');
+          shaftGrad.addColorStop(1, '#fef08a');
+          ctx.strokeStyle = shaftGrad;
+          ctx.lineWidth = 6;
+          ctx.lineCap = 'round';
+          ctx.shadowColor = '#22d3ee';
           ctx.shadowBlur = 28;
           ctx.beginPath();
-          ctx.moveTo(-68, 0);
-          ctx.lineTo(24, 0);
+          ctx.moveTo(-74, 0);
+          ctx.lineTo(28, 0);
           ctx.stroke();
 
-          // Ponta de Flecha Fulminante em formato de raio/diamante
+          // Ponta de flecha em cristal elétrico multifacetado
           ctx.fillStyle = '#fef08a';
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2.2;
           ctx.beginPath();
-          ctx.moveTo(42, 0);
-          ctx.lineTo(8, -15);
-          ctx.lineTo(16, 0);
-          ctx.lineTo(8, 15);
+          ctx.moveTo(48, 0);
+          ctx.lineTo(14, -15);
+          ctx.lineTo(22, -4);
+          ctx.lineTo(6, 0);
+          ctx.lineTo(22, 4);
+          ctx.lineTo(14, 15);
           ctx.closePath();
           ctx.fill();
           ctx.stroke();
 
-          // Penas traseiras de eletricidade
-          ctx.strokeStyle = '#38bdf8';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(-50, 0);
-          ctx.lineTo(-68, -13);
-          ctx.moveTo(-50, 0);
-          ctx.lineTo(-68, 13);
-          ctx.moveTo(-38, 0);
-          ctx.lineTo(-56, -11);
-          ctx.moveTo(-38, 0);
-          ctx.lineTo(-56, 11);
-          ctx.stroke();
+          // Aletas de energia elétrica em camadas
+          ctx.strokeStyle = '#67e8f9';
+          ctx.lineWidth = 3.2;
+          for (const offset of [-58, -44]) {
+            ctx.beginPath();
+            ctx.moveTo(offset + 12, 0);
+            ctx.lineTo(offset - 12, -15);
+            ctx.moveTo(offset + 12, 0);
+            ctx.lineTo(offset - 12, 15);
+            ctx.stroke();
+          }
           ctx.restore();
         }
 
-        // Explosão Elétrica de Alta Voltagem no Alvo (progress >= 0.40)
-        if (progress >= 0.40) {
-          const impT = (progress - 0.40) / 0.60;
-          const shakeX = impT < 0.35 ? Math.sin(timeSec * 90) * 8 * (1 - impT) : 0;
-          const shakeY = impT < 0.35 ? Math.cos(timeSec * 82) * 6 * (1 - impT) : 0;
+        // Explosão Elétrica de Alta Voltagem no Alvo (progress >= 0.39)
+        if (progress >= 0.39) {
+          const impT = (progress - 0.39) / 0.61;
+          const shakeX = impT < 0.36 ? Math.sin(timeSec * 96) * 9 * (1 - impT) : 0;
+          const shakeY = impT < 0.36 ? Math.cos(timeSec * 88) * 6.5 * (1 - impT) : 0;
 
           ctx.save();
           ctx.translate(shakeX, shakeY);
 
-          // Clarão de eletrocussão sobre a carta alvo
-          drawCardHighlight(targetX, targetY, '#22d3ee', Math.sin(impT * Math.PI) * 0.95 * masterAlpha);
+          drawCardHighlight(targetX, targetY, '#22d3ee', Math.sin(impT * Math.PI) * 0.98 * masterAlpha);
 
-          const flashGrad = ctx.createRadialGradient(targetX, targetY, 8, targetX, targetY, 175);
-          flashGrad.addColorStop(0, `rgba(255, 255, 255, ${(1 - impT * 0.6) * masterAlpha})`);
-          flashGrad.addColorStop(0.35, `rgba(34, 211, 238, ${0.75 * (1 - impT * 0.5) * masterAlpha})`);
-          flashGrad.addColorStop(0.7, `rgba(250, 204, 21, ${0.35 * (1 - impT) * masterAlpha})`);
+          // Clarão central de plasma branco-ciano-dourado
+          const flashGrad = ctx.createRadialGradient(targetX, targetY, 6, targetX, targetY, 190);
+          flashGrad.addColorStop(0, `rgba(255, 255, 255, ${(1 - impT * 0.55) * masterAlpha})`);
+          flashGrad.addColorStop(0.32, `rgba(56, 189, 248, ${0.82 * (1 - impT * 0.45) * masterAlpha})`);
+          flashGrad.addColorStop(0.68, `rgba(250, 204, 21, ${0.38 * (1 - impT) * masterAlpha})`);
           flashGrad.addColorStop(1, 'transparent');
           ctx.fillStyle = flashGrad;
           ctx.beginPath();
-          ctx.arc(targetX, targetY, 175, 0, Math.PI * 2);
+          ctx.arc(targetX, targetY, 190, 0, Math.PI * 2);
           ctx.fill();
 
-          // Onda de choque elétrica expansiva
-          ctx.save();
-          ctx.globalAlpha = (1 - impT) * masterAlpha;
-          ctx.strokeStyle = '#67e8f9';
-          ctx.lineWidth = 5 * (1 - impT * 0.6);
-          ctx.shadowColor = '#22d3ee';
-          ctx.shadowBlur = 24;
-          ctx.beginPath();
-          ctx.arc(targetX, targetY, 24 + impT * 155, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-
-          // Arcos Voltaicos / Raios eletrocutando a carta alvo em 8 direções
-          for (let a = 0; a < 8; a++) {
-            const baseAng = (a / 8) * Math.PI * 2 + timeSec * 2.5;
+          // Dupla onda de choque concêntrica
+          for (let r = 0; r < 2; r++) {
+            const rt = Math.max(0, impT - r * 0.12) / (1 - r * 0.12);
+            if (rt <= 0) continue;
             ctx.save();
-            ctx.globalAlpha = (1 - impT * 0.65) * masterAlpha;
-            ctx.strokeStyle = a % 2 === 0 ? '#ffffff' : '#fde047';
-            ctx.lineWidth = a % 2 === 0 ? 3 : 2.2;
+            ctx.globalAlpha = (1 - rt) * masterAlpha;
+            ctx.strokeStyle = r === 0 ? '#ffffff' : '#fde047';
+            ctx.lineWidth = (r === 0 ? 5.5 : 3.2) * (1 - rt * 0.65);
+            ctx.shadowColor = r === 0 ? '#22d3ee' : '#facc15';
+            ctx.shadowBlur = 24;
+            ctx.beginPath();
+            ctx.arc(targetX, targetY, 20 + rt * (165 + r * 28), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // 10 arcos voltaicos ramificados eletrocutando o alvo
+          for (let a = 0; a < 10; a++) {
+            const baseAng = (a / 10) * Math.PI * 2 + timeSec * 2.8;
+            ctx.save();
+            ctx.globalAlpha = (1 - impT * 0.6) * masterAlpha;
+            ctx.strokeStyle = a % 3 === 0 ? '#ffffff' : a % 3 === 1 ? '#38bdf8' : '#fde047';
+            ctx.lineWidth = a % 3 === 0 ? 3.2 : 2;
             ctx.shadowColor = '#22d3ee';
             ctx.shadowBlur = 18;
             ctx.beginPath();
             ctx.moveTo(targetX, targetY);
             for (let step = 1; step <= 5; step++) {
-              const dist = step * (18 + impT * 12);
-              const jitterAng = baseAng + Math.sin(timeSec * 38 + a * 3 + step * 2.1) * 0.28;
+              const dist = step * (19 + impT * 14);
+              const jitterAng = baseAng + Math.sin(timeSec * 44 + a * 3.1 + step * 2.3) * 0.32;
               ctx.lineTo(targetX + Math.cos(jitterAng) * dist, targetY + Math.sin(jitterAng) * dist);
             }
             ctx.stroke();
             ctx.restore();
+          }
+
+          // Faíscas projetadas para fora
+          for (let sp = 0; sp < 16; sp++) {
+            const ang = (sp / 16) * Math.PI * 2 + 0.25;
+            const d = 26 + impT * (95 + (sp % 4) * 28);
+            ctx.fillStyle = sp % 2 === 0 ? '#fef08a' : '#e0f2fe';
+            ctx.globalAlpha = (1 - impT) * masterAlpha;
+            ctx.beginPath();
+            ctx.arc(targetX + Math.cos(ang) * d, targetY + Math.sin(ang) * d, 2.8 * (1 - impT * 0.5), 0, Math.PI * 2);
+            ctx.fill();
           }
 
           drawFloatingBadge(

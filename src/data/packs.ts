@@ -16,12 +16,12 @@ export interface PackDefinition {
   description: string;
 }
 
-export const DUPLICATE_CARD_GOLD_REFUND: Record<1 | 2 | 3 | 4 | 5, number> = {
-  1: 40,
-  2: 90,
-  3: 165,
-  4: 250,
-  5: 375,
+export const DUPLICATE_CARD_CRYSTAL_REFUND: Record<1 | 2 | 3 | 4 | 5, number> = {
+  1: 60,
+  2: 130,
+  3: 220,
+  4: 320,
+  5: 450,
 };
 
 export const LUCKY_PACK_TIER_WEIGHTS: Array<{ tier: 1 | 2 | 3 | 4 | 5; weightPercent: number }> = [
@@ -45,7 +45,7 @@ export const PACK_DEFINITIONS: PackDefinition[] = [
     accentGradient: 'from-stone-700/80 via-stone-900 to-stone-950',
     borderClass: 'border-stone-400/50',
     badgeText: 'TIER 1',
-    description: 'Contém 3 cartas aleatórias de Tier 1. Repetidas são convertidas em Ouro.',
+    description: 'Contém 3 cartas aleatórias de Tier 1. Repetidas são convertidas em Cristais.',
   },
   {
     id: 'uncommon',
@@ -59,7 +59,7 @@ export const PACK_DEFINITIONS: PackDefinition[] = [
     accentGradient: 'from-emerald-800/75 via-stone-900 to-emerald-950/90',
     borderClass: 'border-emerald-400/55',
     badgeText: 'TIER 2',
-    description: 'Contém 3 cartas aleatórias de Tier 2. Repetidas são convertidas em Ouro.',
+    description: 'Contém 3 cartas aleatórias de Tier 2. Repetidas são convertidas em Cristais.',
   },
   {
     id: 'rare',
@@ -73,7 +73,7 @@ export const PACK_DEFINITIONS: PackDefinition[] = [
     accentGradient: 'from-sky-800/75 via-slate-900 to-sky-950/90',
     borderClass: 'border-sky-400/65',
     badgeText: 'TIER 3',
-    description: 'Contém 3 cartas aleatórias de Tier 3. Repetidas são convertidas em Ouro.',
+    description: 'Contém 3 cartas aleatórias de Tier 3. Repetidas são convertidas em Cristais.',
   },
   {
     id: 'epic',
@@ -87,7 +87,7 @@ export const PACK_DEFINITIONS: PackDefinition[] = [
     accentGradient: 'from-purple-800/80 via-slate-900 to-purple-950/90',
     borderClass: 'border-purple-400/70',
     badgeText: 'TIER 4',
-    description: 'Contém 3 cartas aleatórias de Tier 4. Repetidas são convertidas em Ouro.',
+    description: 'Contém 3 cartas aleatórias de Tier 4. Repetidas são convertidas em Cristais.',
   },
   {
     id: 'legendary',
@@ -101,7 +101,7 @@ export const PACK_DEFINITIONS: PackDefinition[] = [
     accentGradient: 'from-amber-700/80 via-stone-900 to-amber-950/90',
     borderClass: 'border-amber-400/80',
     badgeText: 'TIER 5',
-    description: 'Contém 3 cartas aleatórias de Tier 5. Repetidas são convertidas em Ouro.',
+    description: 'Contém 3 cartas aleatórias de Tier 5. Repetidas são convertidas em Cristais.',
   },
   {
     id: 'lucky',

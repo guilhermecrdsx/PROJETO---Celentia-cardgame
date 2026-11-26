@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Trophy,
   Skull,
@@ -17,12 +17,15 @@ import {
   Loader2,
   Lock,
   Coins,
+  Gem,
   GraduationCap,
+  Award,
+  Gift,
 } from 'lucide-react';
 import { sound } from '../services/soundEffects';
 import { getRankInfo } from '../utils/rankSystem';
 import { useRankPolicy } from '../services/rankPolicyService';
-import { useCloudPlayerState } from '../services/accountApi';
+import { useCloudPlayerState, type MatchCompletionRewardsDTO } from '../services/accountApi';
 
 export type RematchRequestStatus = 'idle' | 'requested' | 'declined';
 
@@ -36,9 +39,14 @@ interface GameOverModalProps {
   matchType?: 'normal' | 'ranked';
   rankDelta?: number | null;
   currentRankPoints?: number;
+  matchRewards?: MatchCompletionRewardsDTO | null;
   isOnlinePvp?: boolean;
   isTutorialMode?: boolean;
-  tutorialRewardResult?: { claimedNow: boolean; goldAwarded: number } | null;
+  tutorialRewardResult?: {
+    claimedNow: boolean;
+    goldAwarded: number;
+    freeCommonPacksAwarded?: number;
+  } | null;
   rematchStatus?: RematchRequestStatus;
   rematchStatusMessage?: string | null;
   incomingRematchFrom?: string | null;
@@ -86,6 +94,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   matchType = 'normal',
   rankDelta = null,
   currentRankPoints = 0,
+  matchRewards = null,
   isOnlinePvp = false,
   isTutorialMode = false,
   tutorialRewardResult = null,
@@ -99,6 +108,16 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 }) => {
   const { rankPolicy } = useRankPolicy();
   const { playerState } = useCloudPlayerState();
+  const [showAchievementToast, setShowAchievementToast] = useState<boolean>(false);
+  const [showSurprisePackReveal, setShowSurprisePackReveal] = useState<boolean>(false);
+  const [toastDismissed, setToastDismissed] = useState<boolean>(false);
+
+  const hasSurpriseCommonPack = Boolean(
+    isTutorialMode &&
+      winner === 'player' &&
+      tutorialRewardResult?.claimedNow &&
+      (tutorialRewardResult?.freeCommonPacksAwarded ?? 0) > 0
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -112,6 +131,34 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     }
   }, [isOpen, winner]);
 
+  // Trigger Golden "Conquista Desbloqueada: Conclua o Tutorial" top toast on tutorial victory
+  useEffect(() => {
+    if (!isOpen || !isTutorialMode || winner !== 'player') {
+      setShowAchievementToast(false);
+      setToastDismissed(false);
+      return;
+    }
+    setToastDismissed(false);
+    const toastTimer = window.setTimeout(() => {
+      setShowAchievementToast(true);
+      sound.playSpell();
+    }, 260);
+    return () => window.clearTimeout(toastTimer);
+  }, [isOpen, isTutorialMode, winner]);
+
+  // Sequence the Surprise Free Common Pack reveal right after the achievement toast
+  useEffect(() => {
+    if (!isOpen || !hasSurpriseCommonPack) {
+      setShowSurprisePackReveal(false);
+      return;
+    }
+    const packTimer = window.setTimeout(() => {
+      setShowSurprisePackReveal(true);
+      sound.playSummon();
+    }, 1400);
+    return () => window.clearTimeout(packTimer);
+  }, [isOpen, hasSurpriseCommonPack]);
+
   if (!isOpen) return null;
 
   const isPlayerWinner = winner === 'player';
@@ -120,14 +167,85 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
   const effectiveRankDelta =
     matchType === 'ranked' && playerState?.rankBlockedTotal ? 0 : rankDelta;
+  const hasPlayedRanked =
+    (playerState?.rankedMatchesPlayed ?? 0) > 0 ||
+    Boolean(matchType === 'ranked' && !isDraw);
   const rankInfo = getRankInfo(currentRankPoints, {
     globalBlockedFromTier: rankPolicy.blockedFromTier,
     playerBlockedTotal: playerState?.rankBlockedTotal,
     playerBlockedFromTier: playerState?.rankBlockFromTier,
+    hasPlayedRanked,
   });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/92 backdrop-blur-md p-3 sm:p-4 animate-in fade-in duration-300 select-none overflow-y-auto">
+      {/* Golden Top Toast: Conquista Desbloqueada + Sequenced Surprise Common Pack Reveal */}
+      {isTutorialMode && isPlayerWinner && showAchievementToast && !toastDismissed && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-3 sm:top-5 left-1/2 -translate-x-1/2 z-[70] w-[min(94vw,430px)] flex flex-col gap-2 pointer-events-none"
+        >
+          {/* Toast 1: Conquista Desbloqueada */}
+          <div className="pointer-events-auto relative overflow-hidden rounded-2xl border-2 border-amber-300/90 bg-gradient-to-r from-[#241604]/98 via-[#181108]/98 to-[#0e0b09]/98 px-3.5 py-2.5 shadow-[0_14px_45px_rgba(0,0,0,0.9),0_0_32px_rgba(251,191,36,0.48)] animate-in slide-in-from-top-5 fade-in duration-500 motion-reduce:animate-none">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0 inset-x-8 h-[2px] bg-gradient-to-r from-transparent via-amber-200 to-transparent"
+            />
+            <div className="flex items-center gap-3">
+              <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 via-yellow-500 to-amber-700 p-[1.5px] shadow-[0_0_20px_rgba(251,191,36,0.65)] shrink-0">
+                <div className="w-full h-full rounded-[10px] bg-gradient-to-br from-[#2d1b04] to-[#120b03] flex items-center justify-center">
+                  <Award size={20} className="text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)]" />
+                </div>
+              </div>
+              <div className="min-w-0 flex-1 text-left">
+                <span className="block text-[10px] font-mono font-black uppercase tracking-[0.2em] text-amber-300">
+                  Conquista Desbloqueada
+                </span>
+                <span className="block text-sm sm:text-base font-serif font-black text-amber-50 leading-tight truncate">
+                  Conclua o Tutorial
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToastDismissed(true)}
+                className="p-1 rounded-lg bg-stone-900/85 hover:bg-stone-800 border border-amber-400/35 text-stone-300 hover:text-amber-100 cursor-pointer shrink-0"
+                aria-label="Fechar aviso de conquista"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Toast 2 (1.4s later): Surprise Free Common Pack Reveal */}
+          {showSurprisePackReveal && (
+            <div className="pointer-events-auto relative overflow-hidden rounded-2xl border-2 border-emerald-300/90 bg-gradient-to-r from-[#07261c]/98 via-[#0c1d18]/98 to-[#1c1607]/98 px-3.5 py-2.5 shadow-[0_14px_45px_rgba(0,0,0,0.9),0_0_32px_rgba(52,211,153,0.45)] animate-in zoom-in-95 slide-in-from-top-3 fade-in duration-500 motion-reduce:animate-none">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 inset-x-8 h-[2px] bg-gradient-to-r from-transparent via-emerald-200 to-transparent"
+              />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-300 via-teal-500 to-amber-500 p-[1.5px] shadow-[0_0_18px_rgba(52,211,153,0.6)] shrink-0">
+                  <div className="w-full h-full rounded-[10px] bg-gradient-to-br from-[#09291e] to-[#05130f] flex items-center justify-center">
+                    <Gift size={19} className="text-emerald-200 drop-shadow-[0_0_8px_rgba(52,211,153,0.95)]" />
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <span className="block text-[10px] font-mono font-black uppercase tracking-[0.18em] text-emerald-300">
+                    Presente Surpresa!
+                  </span>
+                  <span className="block text-sm font-serif font-black text-amber-100 leading-tight">
+                    +{tutorialRewardResult?.freeCommonPacksAwarded ?? 1} Pacote Comum Grátis
+                  </span>
+                  <span className="block text-[10.5px] text-stone-300 leading-snug mt-0.5">
+                    Adicionado à sua conta — abra grátis na Loja de Pacotes!
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* Ambient Radial Lighting */}
       <div
         className={`absolute -inset-40 pointer-events-none transition-all duration-1000 ${
@@ -379,6 +497,31 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               </div>
             )}
 
+            {matchRewards?.firstRankedPlacement && (
+              <div className="mb-1.5 px-2.5 py-1 rounded-lg bg-amber-950/65 border border-amber-400/50 text-[10.5px] text-amber-200 text-left flex items-center gap-1.5">
+                <Crown size={12} className="text-amber-300 shrink-0" />
+                <span>Primeira Ranqueada concluída! Você ingressou oficialmente no elo Bronze III.</span>
+              </div>
+            )}
+
+            {((matchRewards?.perfectVictoryBonus ?? 0) > 0 ||
+              (matchRewards?.lossStreakBrokenBonus ?? 0) > 0) && (
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                {(matchRewards?.perfectVictoryBonus ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-400/50 text-[10px] font-mono font-bold text-emerald-200">
+                    <Sparkles size={11} className="text-emerald-300" />
+                    Vitória Perfeita +{matchRewards?.perfectVictoryBonus} RP
+                  </span>
+                )}
+                {(matchRewards?.lossStreakBrokenBonus ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-950/80 border border-sky-400/50 text-[10px] font-mono font-bold text-sky-200">
+                    <Flame size={11} className="text-sky-300" />
+                    Quebra de Sequência +{matchRewards?.lossStreakBrokenBonus} RP
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Rank Progress Bar */}
             <div className="w-full">
               <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 mb-1">
@@ -387,10 +530,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                     ? `Bloqueado antes de ${rankInfo.effectiveBlockedFromTier}`
                     : rankInfo.nextLabel
                     ? `Progresso para ${rankInfo.nextLabel}`
-                    : 'Elo Celestial I Máximo'}
+                    : 'Elo Celestial Máximo'}
                 </span>
                 <span className="text-amber-300 font-bold tabular-nums">
-                  {rankInfo.nextLabel ? `${rankInfo.pointsInDivision} / 100 RP` : `${rankInfo.pointsInDivision} pts`}
+                  {rankInfo.nextLabel ? `${rankInfo.pointsInDivision} / 100 RP` : `${rankInfo.totalPoints} RP`}
                 </span>
               </div>
               <div className="w-full h-2 rounded-full bg-stone-950 border border-white/10 overflow-hidden p-0.5 flex gap-0.5">
@@ -409,43 +552,110 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 })}
               </div>
             </div>
+
+            {matchRewards && (
+              <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px] font-mono">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-sky-300 font-bold tabular-nums">+{matchRewards.xpEarned} XP</span>
+                  <span className="inline-flex items-center gap-1 text-cyan-300 font-bold tabular-nums">
+                    <Gem size={11} className="text-cyan-400 shrink-0" />
+                    +{matchRewards.crystalsEarned ?? 0} Cristais
+                  </span>
+                  {matchRewards.goldEarned > 0 && (
+                    <span className="inline-flex items-center gap-1 text-amber-300 font-bold tabular-nums">
+                      <Coins size={11} className="text-amber-400 shrink-0" />
+                      +{matchRewards.goldEarned} Ouro (Marco)
+                    </span>
+                  )}
+                </div>
+                {matchRewards.leveledUp && (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/55 text-emerald-200 font-bold text-[10px] uppercase tracking-wider">
+                    Subiu para Nv. {matchRewards.newLevel}!
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         ) : isTutorialMode ? (
           <div
-            className={`mt-3.5 mb-2 w-full p-3 rounded-2xl border flex items-center gap-3 text-left ${
+            className={`mt-3.5 mb-2 w-full p-3 rounded-2xl border flex flex-col gap-2.5 text-left ${
               isPlayerWinner && tutorialRewardResult?.claimedNow
                 ? 'bg-gradient-to-r from-amber-950/85 via-emerald-950/75 to-stone-950 border-amber-400/70 shadow-[0_0_24px_rgba(245,158,11,0.3)]'
                 : 'bg-emerald-950/45 border-emerald-500/40'
             }`}
           >
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/60 flex items-center justify-center shrink-0">
-              {isPlayerWinner && tutorialRewardResult?.claimedNow ? (
-                <Coins size={20} className="text-amber-300" />
-              ) : (
-                <GraduationCap size={20} className="text-emerald-300" />
-              )}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/60 flex items-center justify-center shrink-0">
+                {isPlayerWinner && tutorialRewardResult?.claimedNow ? (
+                  <Coins size={20} className="text-amber-300" />
+                ) : (
+                  <GraduationCap size={20} className="text-emerald-300" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="block text-xs font-serif font-black uppercase tracking-wider text-amber-200 tabular-nums">
+                  {isPlayerWinner
+                    ? tutorialRewardResult?.claimedNow
+                      ? `Prêmio do Tutorial · +${tutorialRewardResult.goldAwarded} Ouro`
+                      : 'Conquista · Tutorial Concluído!'
+                    : 'Treinamento Interativo'}
+                </span>
+                <span className="block text-[11px] text-stone-300 mt-0.5">
+                  {isPlayerWinner
+                    ? tutorialRewardResult?.claimedNow
+                      ? '250 Ouro foram creditados na sua conta pela conclusão do treinamento.'
+                      : 'Você completou o treinamento! (Prêmio único já resgatado anteriormente.)'
+                    : 'Tente novamente para concluir o treinamento e garantir seus 250 Ouro.'}
+                </span>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <span className="block text-xs font-serif font-black uppercase tracking-wider text-amber-200">
-                {isPlayerWinner
-                  ? tutorialRewardResult?.claimedNow
-                    ? `Tutorial Concluído! +${tutorialRewardResult.goldAwarded} Ouro`
-                    : 'Tutorial Concluído!'
-                  : 'Treinamento Interativo'}
-              </span>
-              <span className="block text-[11px] text-stone-300 mt-0.5">
-                {isPlayerWinner
-                  ? tutorialRewardResult?.claimedNow
-                    ? '250 Ouro foram creditados na sua conta pela conclusão do treinamento.'
-                    : 'Você completou o treinamento! (Prêmio único de 250 Ouro já resgatado anteriormente.)'
-                  : 'Tente novamente para concluir o treinamento e garantir seus 250 Ouro.'}
-              </span>
-            </div>
+
+            {showSurprisePackReveal && (
+              <div className="flex items-center gap-2.5 pt-2 border-t border-amber-400/25 animate-in fade-in slide-in-from-bottom-2 duration-500 motion-reduce:animate-none">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-300/60 flex items-center justify-center shrink-0">
+                  <Gift size={16} className="text-emerald-300" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-serif font-black uppercase tracking-wider text-emerald-200">
+                    Brinde Surpresa · +{tutorialRewardResult?.freeCommonPacksAwarded ?? 1} Pacote Comum Grátis
+                  </span>
+                  <span className="block text-[10.5px] text-stone-300">
+                    Disponível agora na Loja de Pacotes para abrir sem custo!
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="mt-3.5 mb-2 w-full py-1.5 px-3 rounded-xl bg-stone-900/60 border border-white/5 flex items-center justify-between text-xs text-stone-400">
-            <span>Modo Normal (Casual)</span>
-            <span className="text-[11px] text-stone-500 font-mono">Sem pontuação de Rank</span>
+          <div className="mt-3.5 mb-2 w-full p-2.5 rounded-xl bg-stone-900/75 border border-white/10 flex flex-col gap-1.5 text-xs text-stone-300">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-stone-200">
+                {isOnlinePvp ? 'PvP Normal (Sem Rank)' : 'Modo PvIA'}
+              </span>
+              <span className="text-[11px] text-stone-400 font-mono">0 RP · Sem pontuação de Rank</span>
+            </div>
+            {matchRewards && (
+              <div className="pt-1.5 border-t border-white/10 flex items-center justify-between gap-2 text-[11px] font-mono">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-sky-300 font-bold tabular-nums">+{matchRewards.xpEarned} XP</span>
+                  <span className="inline-flex items-center gap-1 text-cyan-300 font-bold tabular-nums">
+                    <Gem size={11} className="text-cyan-400 shrink-0" />
+                    +{matchRewards.crystalsEarned ?? 0} Cristais
+                  </span>
+                  {matchRewards.goldEarned > 0 && (
+                    <span className="inline-flex items-center gap-1 text-amber-300 font-bold tabular-nums">
+                      <Coins size={11} className="text-amber-400 shrink-0" />
+                      +{matchRewards.goldEarned} Ouro (Marco)
+                    </span>
+                  )}
+                </div>
+                {matchRewards.leveledUp && (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/55 text-emerald-200 font-bold text-[10px] uppercase tracking-wider">
+                    Subiu para Nv. {matchRewards.newLevel}!
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
 

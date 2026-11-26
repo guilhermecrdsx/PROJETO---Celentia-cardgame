@@ -54,20 +54,35 @@ export default function App() {
     return DECK_PRESETS[0]?.name || 'Tríade Elemental: Fogo, Raiz & Trovão';
   });
 
-  // Sync active deck from cloud account when player logs in
+  // Sync active deck strictly from current cloud account; always default to starter deck when empty/logged out
   useEffect(() => {
-    if (playerState && Array.isArray(playerState.decks) && playerState.decks.length > 0) {
-      const activeSlot =
-        playerState.decks.find((d) => d.slotId === playerState.activeSlotId) ||
-        playerState.decks.find((d) => d.isActive) ||
-        playerState.decks[0];
-
-      if (activeSlot && Array.isArray(activeSlot.cardIds) && activeSlot.cardIds.length === 20) {
-        setPlayerDeckCardIds(activeSlot.cardIds);
-        setActiveDeckName(activeSlot.name);
-      }
+    const starterName = DECK_PRESETS[0]?.name || 'Tríade Elemental: Fogo, Raiz & Trovão';
+    if (!playerState || !Array.isArray(playerState.decks)) {
+      setPlayerDeckCardIds(DEFAULT_DECK_IDS);
+      setActiveDeckName(starterName);
+      return;
     }
-  }, [playerState?.uid, playerState?.activeSlotId]);
+
+    const activeSlot =
+      playerState.activeSlotId >= 1 && playerState.activeSlotId <= 3
+        ? playerState.decks.find(
+            (d) =>
+              d.slotId === playerState.activeSlotId &&
+              Array.isArray(d.cardIds) &&
+              d.cardIds.length === 20
+          )
+        : playerState.decks.find(
+            (d) => d.isActive && Array.isArray(d.cardIds) && d.cardIds.length === 20
+          );
+
+    if (activeSlot) {
+      setPlayerDeckCardIds(activeSlot.cardIds);
+      setActiveDeckName(activeSlot.name);
+    } else {
+      setPlayerDeckCardIds(DEFAULT_DECK_IDS);
+      setActiveDeckName(starterName);
+    }
+  }, [playerState?.uid, playerState?.activeSlotId, playerState?.decks]);
 
   const [isTestingArena, setIsTestingArena] = useState<boolean>(false);
   const [isTutorialMode, setIsTutorialMode] = useState<boolean>(false);
@@ -145,7 +160,11 @@ export default function App() {
   };
 
   const handleOpenDeckBuilder = (slotId?: number, returnTo: ReturnOrigin = 'mode_select') => {
-    setBuilderSlotId(slotId || playerState?.activeSlotId || 1);
+    const fallbackSlot =
+      playerState?.activeSlotId && playerState.activeSlotId >= 1 && playerState.activeSlotId <= 3
+        ? playerState.activeSlotId
+        : 1;
+    setBuilderSlotId(slotId || fallbackSlot);
     setDeckBuilderReturnTo(returnTo);
     setIsGameModeModalOpen(false);
     setIsOnlineLobbyOpen(false);

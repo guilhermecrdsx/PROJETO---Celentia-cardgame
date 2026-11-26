@@ -18,11 +18,13 @@ import {
   Wand2,
   Moon,
   Sun,
-  CircleDot,
+  Compass,
   Library,
   Maximize2,
   Minimize2,
   Lock,
+  Trophy,
+  Gem,
 } from 'lucide-react';
 import { sound } from '../services/soundEffects';
 import { getRankInfo, loadRankPoints } from '../utils/rankSystem';
@@ -456,6 +458,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 }) => {
   // Modals state
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileInitialTab, setProfileInitialTab] = useState<'my_profile' | 'leaderboard' | 'search_players'>('my_profile');
   const [isGalleryModalOpen, setIsGalleryModalOpen] = useState(false);
   const [galleryInitialElement, setGalleryInitialElement] = useState<'all' | ElementType>('all');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -529,6 +532,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
     globalBlockedFromTier: rankPolicy.blockedFromTier,
     playerBlockedTotal: playerState?.rankBlockedTotal,
     playerBlockedFromTier: playerState?.rankBlockFromTier,
+    hasPlayedRanked: (playerState?.rankedMatchesPlayed ?? 0) > 0,
   });
 
   // Automatic 10-minute carousel rotating showcase legends
@@ -590,7 +594,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       case 'Elétrico':
         return <Zap size={14} className="text-yellow-200" />;
       case 'Neutro':
-        return <CircleDot size={14} className="text-stone-200" />;
+        return <Compass size={14} className="text-stone-200" />;
       case 'Divino':
         return <Sun size={14} className="text-amber-100" />;
       case 'Sombrio':
@@ -1359,6 +1363,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           type="button"
           onClick={() => {
             sound.playDraw();
+            setProfileInitialTab('my_profile');
             setIsProfileModalOpen(true);
           }}
           className={`group relative flex items-center text-left rounded-2xl bg-gradient-to-b from-stone-900/95 to-stone-950/95 border-2 border-stone-700/90 hover:border-cyan-400/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 shadow-[0_8px_30px_rgba(0,0,0,0.92)] transition-all duration-200 cursor-pointer shrink-0 max-w-[68vw] sm:max-w-none ${
@@ -1387,7 +1392,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               <span className="text-sm sm:text-base font-serif font-black tracking-wide text-amber-100 group-hover:text-white transition-colors truncate">
                 {playerState?.nickname ?? profile.nickname}
               </span>
-              <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 text-[11px] font-mono font-bold text-amber-300 flex items-center gap-1 tabular-nums shrink-0">
+              <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 border border-cyan-400/50 text-[11px] font-mono font-bold text-cyan-200 flex items-center gap-1 tabular-nums shrink-0" title="Cristais">
+                <Gem size={11} className="text-cyan-300 shrink-0" />
+                <span>{playerState?.crystals ?? profile.crystals ?? 0}</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 text-[11px] font-mono font-bold text-amber-300 flex items-center gap-1 tabular-nums shrink-0" title="Ouro">
                 <span>🪙</span>
                 <span>{playerState?.gold ?? profile.gold}</span>
               </span>
@@ -1403,14 +1412,54 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               )}
               <span aria-hidden="true" className="text-stone-500">·</span>
               <span className="text-stone-400">
-                {rankInfo.nextLabel ? `${rankInfo.pointsInDivision}/100 RP` : `${rankInfo.totalPoints} RP`}
+                {rankInfo.isUnranked
+                  ? '1ª Ranqueada → Bronze III'
+                  : rankInfo.nextLabel
+                  ? `${rankInfo.pointsInDivision}/100 RP`
+                  : `${rankInfo.totalPoints} RP`}
               </span>
             </div>
           </div>
         </button>
 
-        {/* Bottom Right: Compact Hover-Expanding Icon Dock (Galeria de Cartas & Regras) */}
+        {/* Bottom Right: Compact Hover-Expanding Icon Dock (Ranking Geral, Galeria de Cartas & Regras) */}
         <div className="flex items-end justify-end gap-2.5 shrink-0">
+          {/* Ranking Geral — Icon-only at rest, expands leftward on hover/focus */}
+          <button
+            type="button"
+            onClick={() => {
+              sound.playDraw();
+              setProfileInitialTab('leaderboard');
+              setIsProfileModalOpen(true);
+            }}
+            aria-label="Ranking Geral — Classificação global dos duelistas"
+            className="group relative flex items-center justify-end rounded-2xl p-[2px] bg-gradient-to-br from-amber-300/80 via-yellow-500/75 to-orange-400/80 hover:from-amber-200 hover:via-yellow-400 hover:to-amber-300 shadow-[0_8px_28px_rgba(0,0,0,0.9)] hover:shadow-[0_0_26px_rgba(251,191,36,0.38)] transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 shrink-0"
+          >
+            <div
+              className={`relative rounded-[14px] bg-gradient-to-r from-[#1e1306] via-[#17110a] to-[#1a1007] flex items-center justify-end overflow-hidden ${
+                isCompactLandscape ? 'p-1.5' : 'p-2'
+              }`}
+            >
+              <div className="overflow-hidden max-w-0 opacity-0 pl-0 pr-0 group-hover:max-w-[230px] group-hover:opacity-100 group-hover:pl-2.5 group-hover:pr-3 group-focus-visible:max-w-[230px] group-focus-visible:opacity-100 group-focus-visible:pl-2.5 group-focus-visible:pr-3 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none">
+                <div className="flex flex-col items-end text-right whitespace-nowrap">
+                  <span className="text-xs font-serif font-black tracking-wider uppercase text-amber-200">
+                    Ranking Geral
+                  </span>
+                  <span className="text-[11px] text-amber-100/75">
+                    Classificação dos duelistas
+                  </span>
+                </div>
+              </div>
+              <div
+                className={`relative z-10 rounded-xl bg-gradient-to-br from-amber-500/25 via-yellow-500/20 to-orange-500/25 border border-amber-300/65 flex items-center justify-center shadow-[0_0_14px_rgba(251,191,36,0.3)] group-hover:scale-105 transition-transform shrink-0 ${
+                  isCompactLandscape ? 'w-9 h-9' : 'w-11 h-11'
+                }`}
+              >
+                <Trophy size={isCompactLandscape ? 18 : 21} className="text-amber-300" />
+              </div>
+            </div>
+          </button>
+
           {/* Galeria de Cartas — Icon-only at rest, expands title + description on hover/focus */}
           <button
             type="button"
@@ -1495,6 +1544,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* ============================================================== */}
       <PlayerProfileModal
         isOpen={isProfileModalOpen}
+        initialTab={profileInitialTab}
         onClose={() => setIsProfileModalOpen(false)}
         onOpenAdminPanel={
           isAdminAccount

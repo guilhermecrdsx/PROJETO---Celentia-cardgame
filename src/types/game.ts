@@ -222,6 +222,7 @@ export interface PlayerState {
   secondAttackDone?: boolean; // Track if 2nd attack already executed
   scheduledLetargia?: { targetIds: string[]; roundsRemaining: number }[]; // Letargia Lunar reincidence
   purpleExtraHpSlots?: number; // Extra permanent Max HP segments granted by Mipo (rendered in purple)
+  finnFairyHpSlots?: number; // Extra permanent Max HP segments granted by Finn (rendered in fairy green-pink)
   pinkExtraHpSlots?: number; // Extra HP points granted by Corte das Fadas (rendered in pink)
   corteDasFadasUsed?: boolean; // Tracks if Corte das Fadas already saved the player once
 }
@@ -285,6 +286,11 @@ export interface CombatResultDetail {
   hemorrhageTriggeredDefender?: boolean;
   hemorrhageDamageDealt?: number;
   titanoBleedHealTriggered?: 'attacker' | 'defender' | 'both';
+  elementalImmunityTriggers?: Array<{
+    targetId: string;
+    element: 'Gelo' | 'Fogo';
+    side: 'attacker' | 'defender';
+  }>;
 }
 
 export interface GameLogEntry {

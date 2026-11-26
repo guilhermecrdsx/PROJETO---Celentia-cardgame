@@ -19,6 +19,14 @@ import {
   Lock,
   Gift,
   Image as ImageIcon,
+  Swords,
+  Sparkles,
+  Flame,
+  Clock,
+  RefreshCw,
+  ChevronRight,
+  Heart,
+  Gem,
 } from 'lucide-react';
 import { sound } from '../services/soundEffects';
 import {
@@ -26,6 +34,7 @@ import {
   savePlayerProfile,
   savePlayerProfileAsync,
   getMatchHistory,
+  type MatchRecord,
 } from '../utils/matchHistory';
 import { getRankInfo, loadRankPoints } from '../utils/rankSystem';
 import { useRankPolicy } from '../services/rankPolicyService';
@@ -34,7 +43,7 @@ import { CARD_AVATARS, FREE_AVATAR_IDS, DEFAULT_AVATAR_ID } from '../data/avatar
 import {
   ACCOUNT_LEVEL_MILESTONES,
   MAX_ACCOUNT_LEVEL,
-  XP_PER_ACCOUNT_LEVEL,
+  getXpRequiredForNextLevel,
 } from '../data/levelProgression';
 import {
   useCloudPlayerState,
@@ -43,6 +52,9 @@ import {
   executeAdminActionInCloud,
   searchPlayersInCloud,
   getPublicPlayerProfileInCloud,
+  fetchGlobalLeaderboardInCloud,
+  type CloudMatchRecordDTO,
+  type LeaderboardEntryDTO,
   type PublicPlayerSummaryDTO,
   type PublicPlayerProfileDTO,
 } from '../services/accountApi';
@@ -52,20 +64,56 @@ import {
   validateHandle,
 } from '../utils/nickname';
 
+export type PlayerProfileModalTab = 'my_profile' | 'leaderboard' | 'search_players';
+
 interface PlayerProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenAdminPanel?: () => void;
+  initialTab?: PlayerProfileModalTab;
+}
+
+function getMatchModeLabel(mode: MatchRecord['mode']): string {
+  if (mode === 'pvp_ranked') return 'PvP Ranqueado';
+  if (mode === 'pvp_normal') return 'PvP Normal';
+  return 'PvIA';
+}
+
+function getMatchModeBadgeClass(mode: MatchRecord['mode']): string {
+  if (mode === 'pvp_ranked') {
+    return 'bg-amber-500/15 border-amber-400/50 text-amber-200';
+  }
+  if (mode === 'pvp_normal') {
+    return 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200';
+  }
+  return 'bg-stone-800/90 border-stone-600/70 text-stone-300';
+}
+
+function formatMatchDateTime(match: MatchRecord | CloudMatchRecordDTO): string {
+  if (match.playedAtIso) {
+    const parsed = new Date(match.playedAtIso);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+  }
+  return match.date;
 }
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   isOpen,
   onClose,
   onOpenAdminPanel,
+  initialTab = 'my_profile',
 }) => {
   const { playerState } = useCloudPlayerState();
   const { rankPolicy } = useRankPolicy();
-  const [activeTab, setActiveTab] = useState<'my_profile' | 'search_players'>('my_profile');
+  const [activeTab, setActiveTab] = useState<PlayerProfileModalTab>(initialTab);
 
   // Own profile state
   const [profile, setProfile] = useState(() => getPlayerProfile());
@@ -81,14 +129,26 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   const [adminFeedback, setAdminFeedback] = useState<string | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
 
-  // Player search state
+  // Global leaderboard state (strictly real PostgreSQL data)
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntryDTO[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+
+  // Player search & public inspection state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PublicPlayerSummaryDTO[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [inspectedProfile, setInspectedProfile] =
     useState<PublicPlayerProfileDTO | null>(null);
+  const [inspectOrigin, setInspectOrigin] = useState<'leaderboard' | 'search_players'>('search_players');
   const [loadingInspected, setLoadingInspected] = useState(false);
+
+  // Match history detail modal state
+  const [selectedMatchDetail, setSelectedMatchDetail] = useState<{
+    match: MatchRecord | CloudMatchRecordDTO;
+    playerName: string;
+  } | null>(null);
 
   const handleAdminAction = async (
     action:
@@ -96,6 +156,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
       | 'grant_event_classes'
       | 'reset_starter_cards'
       | 'add_gold_5000'
+      | 'add_crystals_5000'
+      | 'unlock_all_cosmetics'
       | 'max_level_rank',
     label: string
   ) => {
@@ -122,13 +184,32 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   }, [playerState, isOpen, isEditingNick]);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      setActiveTab(initialTab);
+      setInspectedProfile(null);
+      setSelectedMatchDetail(null);
+    } else {
       setActiveTab('my_profile');
       setInspectedProfile(null);
+      setSelectedMatchDetail(null);
       setNickFeedback(null);
       setSearchError(null);
+      setLeaderboardError(null);
     }
-  }, [isOpen]);
+  }, [isOpen, initialTab]);
+
+  const loadLeaderboard = useCallback(async () => {
+    try {
+      setLeaderboardLoading(true);
+      setLeaderboardError(null);
+      const rows = await fetchGlobalLeaderboardInCloud(50);
+      setLeaderboard(rows);
+    } catch (err: any) {
+      setLeaderboardError(err?.message || 'Não foi possível carregar o ranking geral.');
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
 
   const runPlayerSearch = useCallback(async (queryText: string) => {
     try {
@@ -144,6 +225,12 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   }, []);
 
   useEffect(() => {
+    if (isOpen && activeTab === 'leaderboard') {
+      void loadLeaderboard();
+    }
+  }, [isOpen, activeTab, loadLeaderboard]);
+
+  useEffect(() => {
     if (isOpen && activeTab === 'search_players') {
       void runPlayerSearch(searchQuery);
     }
@@ -153,7 +240,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
   const matches = playerState?.matches || getMatchHistory();
   const rankPoints = playerState?.rankPoints ?? loadRankPoints();
+  const hasPlayedRanked = (playerState?.rankedMatchesPlayed ?? 0) > 0;
   const rankInfo = getRankInfo(rankPoints, {
+    hasPlayedRanked,
     globalBlockedFromTier: rankPolicy.blockedFromTier,
     playerBlockedTotal: playerState?.rankBlockedTotal,
     playerBlockedFromTier: playerState?.rankBlockFromTier,
@@ -164,9 +253,11 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   const losses = playerState?.losses ?? matches.filter((m) => m.result === 'defeat').length;
   const currentLevel = Math.min(MAX_ACCOUNT_LEVEL, Math.max(1, profile.level));
   const isMaxLevel = currentLevel >= MAX_ACCOUNT_LEVEL;
+  const xpNeededForNext = playerState?.xpForNextLevel ?? getXpRequiredForNextLevel(currentLevel);
+  const currentXpClamped = isMaxLevel ? 0 : Math.min(xpNeededForNext, Math.max(0, profile.xp));
   const xpProgressPct = isMaxLevel
     ? 100
-    : Math.min(100, Math.round(((profile.xp % XP_PER_ACCOUNT_LEVEL) / XP_PER_ACCOUNT_LEVEL) * 100));
+    : Math.min(100, Math.round((currentXpClamped / Math.max(1, xpNeededForNext)) * 100));
   const unlockedAvatarSet = new Set<string>([
     ...FREE_AVATAR_IDS,
     ...(playerState?.unlockedAvatarIds || []),
@@ -255,15 +346,25 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
     void runPlayerSearch(searchQuery);
   };
 
-  const handleInspectPlayer = async (uidOrNick: string) => {
+  const handleInspectPlayer = async (
+    uidOrNick: string,
+    origin: 'leaderboard' | 'search_players' = 'search_players'
+  ) => {
     try {
       setLoadingInspected(true);
       setSearchError(null);
+      setLeaderboardError(null);
+      setInspectOrigin(origin);
       sound.playDraw();
       const details = await getPublicPlayerProfileInCloud(uidOrNick);
       setInspectedProfile(details);
     } catch (err: any) {
-      setSearchError(err?.message || 'Não foi possível abrir o perfil deste jogador.');
+      const msg = err?.message || 'Não foi possível abrir o perfil deste jogador.';
+      if (origin === 'leaderboard') {
+        setLeaderboardError(msg);
+      } else {
+        setSearchError(msg);
+      }
     } finally {
       setLoadingInspected(false);
     }
@@ -323,13 +424,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
           </div>
         </div>
 
-        {/* Profile Sub-navigation Tabs: Meu Perfil | Pesquisar Jogadores */}
+        {/* Profile Sub-navigation Tabs: Meu Perfil | Ranking Geral | Pesquisar Jogadores */}
         <div className="shrink-0 px-4 sm:px-6 py-2.5 bg-stone-950/90 border-b border-stone-800 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={() => {
                 sound.playDraw();
+                setInspectedProfile(null);
                 setActiveTab('my_profile');
               }}
               className={`px-3.5 py-2 rounded-xl text-xs font-serif font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border ${
@@ -346,6 +448,24 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               type="button"
               onClick={() => {
                 sound.playDraw();
+                setInspectedProfile(null);
+                setActiveTab('leaderboard');
+              }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-serif font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border ${
+                activeTab === 'leaderboard'
+                  ? 'bg-gradient-to-r from-yellow-500/25 to-amber-600/25 border-yellow-400/80 text-yellow-200 shadow-[0_0_15px_rgba(250,204,21,0.2)]'
+                  : 'bg-stone-900/80 border-stone-700/80 text-stone-400 hover:text-yellow-100'
+              }`}
+            >
+              <Trophy size={14} />
+              <span>Ranking Geral</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                sound.playDraw();
+                setInspectedProfile(null);
                 setActiveTab('search_players');
               }}
               className={`px-3.5 py-2 rounded-xl text-xs font-serif font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer border ${
@@ -447,7 +567,11 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       </span>
                     </div>
                     <span className="text-[10px] uppercase font-serif tracking-wider text-amber-300 font-bold mt-1 text-center tabular-nums">
-                      {rankInfo.pointsInDivision}/100 RP
+                      {rankInfo.isUnranked
+                        ? 'Sem rank'
+                        : rankInfo.nextLabel
+                          ? `${rankInfo.pointsInDivision}/100 RP`
+                          : `${rankInfo.totalPoints} RP`}
                     </span>
                   </div>
 
@@ -474,7 +598,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     <span className="text-amber-300 font-bold uppercase">
                       Avatares Desbloqueados ({ownedAvatars.length}/{CARD_AVATARS.length})
                     </span>
-                    <span className="text-stone-400">Mais 50 na Loja</span>
+                    <span className="text-stone-400">
+                      Mais {CARD_AVATARS.length - FREE_AVATAR_IDS.length} na Loja
+                    </span>
                   </div>
                   <div className="grid grid-cols-5 gap-2 max-h-44 overflow-y-auto pr-1">
                     {ownedAvatars.map((av) => {
@@ -607,7 +733,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       Nível {currentLevel} / {MAX_ACCOUNT_LEVEL}
                     </span>
                     <span className="text-stone-300 tabular-nums">
-                      {isMaxLevel ? 'NÍVEL MÁXIMO' : `${profile.xp % XP_PER_ACCOUNT_LEVEL} / ${XP_PER_ACCOUNT_LEVEL} XP`}
+                      {isMaxLevel ? 'NÍVEL MÁXIMO' : `${currentXpClamped} / ${xpNeededForNext} XP`}
                     </span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-stone-950 overflow-hidden border border-stone-800">
@@ -662,8 +788,16 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   </div>
                 )}
 
-                {/* Gold, Win/Loss & Unlocked Cards */}
-                <div className="grid grid-cols-3 gap-2 text-center">
+                {/* Crystals, Gold, Win/Loss & Unlocked Cards */}
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="p-2.5 rounded-xl bg-stone-900/90 border border-cyan-400/45 flex flex-col items-center">
+                    <div className="flex items-center gap-1 text-cyan-200 font-mono font-black text-sm tabular-nums">
+                      <Gem size={13} className="text-cyan-300" />
+                      <span>{playerState?.crystals ?? profile.crystals ?? 0}</span>
+                    </div>
+                    <span className="text-[10px] text-stone-400 uppercase font-bold mt-0.5">Cristais</span>
+                  </div>
+
                   <div className="p-2.5 rounded-xl bg-stone-900/90 border border-amber-500/40 flex flex-col items-center">
                     <div className="flex items-center gap-1 text-amber-300 font-mono font-black text-sm tabular-nums">
                       <Coins size={13} className="text-amber-400" />
@@ -672,9 +806,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     <span className="text-[10px] text-stone-400 uppercase font-bold mt-0.5">Ouro</span>
                   </div>
 
-                  <div className="p-2.5 rounded-xl bg-stone-900/90 border border-cyan-500/40 flex flex-col items-center">
-                    <div className="flex items-center gap-1 text-cyan-300 font-mono font-black text-sm tabular-nums">
-                      <Trophy size={13} className="text-cyan-400" />
+                  <div className="p-2.5 rounded-xl bg-stone-900/90 border border-emerald-500/40 flex flex-col items-center">
+                    <div className="flex items-center gap-1 text-emerald-300 font-mono font-black text-sm tabular-nums">
+                      <Trophy size={13} className="text-emerald-400" />
                       <span>{wins}V/{losses}D</span>
                     </div>
                     <span className="text-[10px] text-stone-400 uppercase font-bold mt-0.5">Batalhas</span>
@@ -752,10 +886,26 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       <button
                         type="button"
                         disabled={adminBusy}
-                        onClick={() => handleAdminAction('max_level_rank', 'Nv.50 & Celestial I!')}
-                        className="py-1.5 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500 text-cyan-200 hover:text-stone-950 border border-cyan-400/50 transition-all cursor-pointer"
+                        onClick={() => handleAdminAction('add_crystals_5000', '+5.000 Cristais!')}
+                        className="py-1.5 px-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-400 text-cyan-200 hover:text-stone-950 border border-cyan-400/50 transition-all cursor-pointer"
                       >
-                        ⚡ Nv.50 & Celestial I
+                        💎 +5.000 Cristais
+                      </button>
+                      <button
+                        type="button"
+                        disabled={adminBusy}
+                        onClick={() => handleAdminAction('unlock_all_cosmetics', 'Cosméticos Liberados!')}
+                        className="py-1.5 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-400 text-emerald-200 hover:text-stone-950 border border-emerald-400/50 transition-all cursor-pointer"
+                      >
+                        🎨 Cosméticos
+                      </button>
+                      <button
+                        type="button"
+                        disabled={adminBusy}
+                        onClick={() => handleAdminAction('max_level_rank', 'Nv.50 & Celestial!')}
+                        className="py-1.5 px-2 rounded-lg bg-indigo-500/20 hover:bg-indigo-400 text-indigo-200 hover:text-stone-950 border border-indigo-400/50 transition-all cursor-pointer"
+                      >
+                        ⚡ Nv.50 & Celestial
                       </button>
                       <button
                         type="button"
@@ -784,7 +934,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     HISTÓRICO DE PARTIDAS
                   </h3>
                   <span className="text-xs font-mono text-stone-400">
-                    {matches.length} partidas salvas na nuvem
+                    {matches.length} partidas · clique para detalhar
                   </span>
                 </div>
 
@@ -795,23 +945,32 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                         Nenhuma batalha registrada nesta conta ainda
                       </p>
                       <p className="text-stone-500">
-                        Dispute uma partida para ganhar +150 Ouro, +120 XP e salvar seu histórico na nuvem!
+                        Dispute uma partida para ganhar Cristais, XP e salvar seu histórico completo na nuvem!
                       </p>
                     </div>
                   ) : (
                     matches.map((match) => {
                       const isVictory = match.result === 'victory';
+                      const showRpPill = match.mode === 'pvp_ranked' || match.rpChange !== 0;
 
                       return (
-                        <div
+                        <button
                           key={match.id}
-                          className={`relative w-full p-3.5 rounded-2xl border-2 transition-all flex items-center justify-between gap-3 shadow-md ${
+                          type="button"
+                          onClick={() => {
+                            sound.playDraw();
+                            setSelectedMatchDetail({
+                              match,
+                              playerName: formatHandleDisplay(profile.nickname),
+                            });
+                          }}
+                          className={`group relative w-full text-left p-3.5 rounded-2xl border-2 transition-all flex items-center justify-between gap-3 shadow-md cursor-pointer ${
                             isVictory
-                              ? 'bg-gradient-to-r from-cyan-950/40 via-stone-950 to-stone-900 border-cyan-500/50 hover:border-cyan-400'
-                              : 'bg-gradient-to-r from-rose-950/40 via-stone-950 to-stone-900 border-rose-500/50 hover:border-rose-400'
+                              ? 'bg-gradient-to-r from-cyan-950/40 via-stone-950 to-stone-900 border-cyan-500/50 hover:border-cyan-300'
+                              : 'bg-gradient-to-r from-rose-950/40 via-stone-950 to-stone-900 border-rose-500/50 hover:border-rose-300'
                           }`}
                         >
-                          <div className="flex items-center gap-3 min-w-[140px]">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             {isVictory ? (
                               <div className="w-8 h-8 rounded-lg bg-cyan-400/20 border-2 border-cyan-300 rotate-45 flex items-center justify-center shadow-[0_0_10px_#38bdf8] shrink-0">
                                 <span className="-rotate-45 text-cyan-200 text-xs">💎</span>
@@ -822,27 +981,54 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                               </div>
                             )}
 
-                            <div className="flex flex-col">
-                              <span
-                                className={`font-serif font-black text-sm sm:text-base tracking-wider ${
-                                  isVictory
-                                    ? 'text-cyan-300 drop-shadow-[0_0_6px_#38bdf8]'
-                                    : 'text-rose-400 drop-shadow-[0_0_6px_#f43f5e]'
-                                }`}
-                              >
-                                {isVictory ? 'VITÓRIA' : 'DERROTA'}
-                              </span>
-                              <span className="text-[10px] text-stone-400 font-mono truncate max-w-[140px]">
+                            <div className="flex flex-col min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className={`font-serif font-black text-sm sm:text-base tracking-wider ${
+                                    isVictory
+                                      ? 'text-cyan-300 drop-shadow-[0_0_6px_#38bdf8]'
+                                      : 'text-rose-400 drop-shadow-[0_0_6px_#f43f5e]'
+                                  }`}
+                                >
+                                  {isVictory ? 'VITÓRIA' : 'DERROTA'}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold uppercase ${getMatchModeBadgeClass(
+                                    match.mode
+                                  )}`}
+                                >
+                                  {getMatchModeLabel(match.mode)}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-stone-400 font-mono truncate max-w-[165px]">
                                 {match.deckName}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-950 border border-amber-500/40 text-xs font-mono font-bold text-amber-300 shadow">
-                              <span>🏆</span>
-                              <span>{match.rpChange > 0 ? `+${match.rpChange}` : match.rpChange} RP</span>
-                            </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {showRpPill ? (
+                              <div
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-950 border text-xs font-mono font-bold shadow ${
+                                  match.rpChange >= 0
+                                    ? 'border-amber-500/45 text-amber-300'
+                                    : 'border-rose-500/45 text-rose-300'
+                                }`}
+                              >
+                                <span>🏆</span>
+                                <span>{match.rpChange > 0 ? `+${match.rpChange}` : match.rpChange} RP</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-950 border border-cyan-500/35 text-xs font-mono font-bold text-cyan-300 shadow">
+                                <span>+{match.xpEarned ?? 0} XP</span>
+                              </div>
+                            )}
+                            {match.crystalsEarned !== undefined && match.crystalsEarned > 0 && (
+                              <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-950 border border-cyan-400/45 text-xs font-mono font-bold text-cyan-200 shadow">
+                                <Gem size={11} className="text-cyan-300" />
+                                <span>+{match.crystalsEarned}</span>
+                              </div>
+                            )}
                             {match.goldEarned !== undefined && match.goldEarned > 0 && (
                               <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-950 border border-yellow-500/40 text-xs font-mono font-bold text-yellow-300 shadow">
                                 <span>🪙</span>
@@ -851,9 +1037,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                             )}
                           </div>
 
-                          <div className="flex items-center gap-2.5 text-right">
+                          <div className="flex items-center gap-2 text-right shrink-0">
                             <div className="flex flex-col">
-                              <span className="text-xs font-bold text-stone-200 truncate max-w-[120px]">
+                              <span className="text-xs font-bold text-stone-200 truncate max-w-[110px]">
                                 {match.opponentName}
                               </span>
                               <span className="text-[10px] text-stone-400 font-mono">
@@ -861,11 +1047,12 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                               </span>
                             </div>
 
-                            <div className="w-8 h-8 rounded-full bg-stone-800 border border-stone-600 flex items-center justify-center text-xs shrink-0 shadow">
-                              ⚔️
-                            </div>
+                            <ChevronRight
+                              size={16}
+                              className="text-stone-500 group-hover:text-amber-300 group-hover:translate-x-0.5 transition-all shrink-0"
+                            />
                           </div>
-                        </div>
+                        </button>
                       );
                     })
                   )}
@@ -873,70 +1060,37 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               </div>
             </div>
           </div>
-        ) : (
+        ) : inspectedProfile ? (
           /* ================================================================ */
-          /* TAB 2: PESQUISAR PERFIS DE OUTROS JOGADORES                      */
+          /* PUBLIC PROFILE INSPECTION VIEW (FROM LEADERBOARD OR SEARCH)      */
           /* ================================================================ */
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-5">
-            {/* Search Form */}
-            <form
-              onSubmit={handleSearchSubmit}
-              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-3.5 rounded-2xl bg-stone-900/90 border-2 border-cyan-500/35 shadow-lg"
+            <button
+              type="button"
+              onClick={() => {
+                sound.playDraw();
+                setInspectedProfile(null);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-700 hover:border-cyan-400/60 text-xs font-serif font-bold uppercase tracking-wider text-cyan-200 flex items-center gap-2 cursor-pointer"
             >
-              <div className="relative flex-1">
-                <Search
-                  size={16}
-                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-cyan-400"
-                />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Digite o @nick do duelista (ex: @arcanista)"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-stone-950 border border-stone-700 focus:border-cyan-400 text-sm font-mono text-stone-100 placeholder-stone-500 focus:outline-none"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={searching}
-                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 disabled:opacity-50 text-white font-serif font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg flex items-center justify-center gap-2"
-              >
-                <Search size={15} />
-                <span>{searching ? 'Buscando...' : 'Pesquisar'}</span>
-              </button>
-            </form>
+              <ArrowLeft size={14} />
+              <span>
+                {inspectOrigin === 'leaderboard'
+                  ? 'Voltar ao Ranking Geral'
+                  : 'Voltar à Lista de Jogadores'}
+              </span>
+            </button>
 
-            {searchError && (
-              <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs flex items-center gap-2">
-                <AlertCircle size={15} className="text-rose-400 shrink-0" />
-                <span>{searchError}</span>
-              </div>
-            )}
-
-            {inspectedProfile ? (
-              /* PUBLIC PROFILE INSPECTION VIEW */
-              <div className="space-y-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    sound.playDraw();
-                    setInspectedProfile(null);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-700 hover:border-cyan-400/60 text-xs font-serif font-bold uppercase tracking-wider text-cyan-200 flex items-center gap-2 cursor-pointer"
-                >
-                  <ArrowLeft size={14} />
-                  <span>Voltar à Lista de Jogadores</span>
-                </button>
-
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                  {/* Left: Public Identity & Stats */}
-                  {(() => {
-                    const inspectedRank = getRankInfo(inspectedProfile.rankPoints, {
-                      globalBlockedFromTier: rankPolicy.blockedFromTier,
-                      playerBlockedTotal: inspectedProfile.rankBlockedTotal,
-                      playerBlockedFromTier: inspectedProfile.rankBlockFromTier,
-                    });
-                    return (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+              {/* Left: Public Identity & Stats */}
+              {(() => {
+                const inspectedRank = getRankInfo(inspectedProfile.rankPoints, {
+                  hasPlayedRanked: (inspectedProfile.rankedMatchesPlayed ?? 0) > 0,
+                  globalBlockedFromTier: rankPolicy.blockedFromTier,
+                  playerBlockedTotal: inspectedProfile.rankBlockedTotal,
+                  playerBlockedFromTier: inspectedProfile.rankBlockFromTier,
+                });
+                return (
                   <div className="lg:col-span-5 rounded-3xl bg-stone-900/90 border-2 border-cyan-500/45 p-5 space-y-4 shadow-xl">
                     <div className="flex items-center gap-4">
                       <AvatarPortrait
@@ -957,7 +1111,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                           )}
                         </div>
                         <p className="text-xs font-mono text-stone-400 mt-0.5">
-                          Nível {inspectedProfile.level} · {inspectedRank.label} ({inspectedProfile.rankPoints} RP)
+                          Nível {inspectedProfile.level} · {inspectedRank.label}
+                          {!inspectedRank.isUnranked ? ` (${inspectedProfile.rankPoints} RP)` : ''}
                         </p>
                       </div>
                     </div>
@@ -968,7 +1123,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                           {inspectedRank.label}
                         </div>
                         <div className="text-[10px] text-stone-400 uppercase font-bold mt-0.5">
-                          {inspectedProfile.rankPoints} RP
+                          {inspectedRank.isUnranked ? 'Não classificado' : `${inspectedProfile.rankPoints} RP`}
                         </div>
                       </div>
                       <div className="p-2.5 rounded-xl bg-stone-950 border border-cyan-500/40">
@@ -1008,148 +1163,95 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       </span>
                     </div>
                   </div>
-                    );
-                  })()}
+                );
+              })()}
 
-                  {/* Right: Public Match History */}
-                  <div className="lg:col-span-7 rounded-3xl bg-stone-900/90 border-2 border-stone-700 p-4 sm:p-5 space-y-3">
-                    <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-                      <h4 className="font-serif font-black text-base uppercase tracking-wider text-amber-200">
-                        Partidas Recentes de {inspectedProfile.nickname}
-                      </h4>
-                      <span className="text-[11px] font-mono text-stone-400">
-                        {inspectedProfile.recentMatches.length} registros
-                      </span>
-                    </div>
-
-                    {inspectedProfile.recentMatches.length === 0 ? (
-                      <p className="text-center text-xs text-stone-500 py-10">
-                        Este duelista ainda não concluiu partidas registradas.
-                      </p>
-                    ) : (
-                      <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
-                        {inspectedProfile.recentMatches.map((m) => {
-                          const isWin = m.result === 'victory';
-                          return (
-                            <div
-                              key={m.id}
-                              className={`p-3 rounded-xl border flex items-center justify-between gap-2 text-xs ${
-                                isWin
-                                  ? 'bg-cyan-950/25 border-cyan-500/40'
-                                  : 'bg-rose-950/25 border-rose-500/40'
-                              }`}
-                            >
-                              <div className="min-w-0">
-                                <span
-                                  className={`font-serif font-black uppercase ${
-                                    isWin ? 'text-cyan-300' : 'text-rose-400'
-                                  }`}
-                                >
-                                  {isWin ? 'Vitória' : 'Derrota'}
-                                </span>
-                                <span className="text-stone-400 font-mono text-[10px] block truncate max-w-[180px]">
-                                  {m.deckName}
-                                </span>
-                              </div>
-                              <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-amber-500/40 font-mono text-amber-300 font-bold shrink-0">
-                                {m.rpChange > 0 ? `+${m.rpChange}` : m.rpChange} RP
-                              </span>
-                              <div className="text-right min-w-0">
-                                <span className="text-stone-200 font-bold block truncate max-w-[130px]">
-                                  vs {m.opponentName}
-                                </span>
-                                <span className="text-[10px] font-mono text-stone-400">
-                                  {m.date}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* SEARCH RESULTS GRID */
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs sm:text-sm font-serif font-black uppercase tracking-widest text-amber-200 flex items-center gap-2">
-                    <Users size={15} className="text-cyan-400" />
-                    <span>
-                      {searchQuery.trim()
-                        ? `Resultados para "${searchQuery.trim()}"`
-                        : 'Duelistas em Destaque no Reino'}
-                    </span>
-                  </h3>
+              {/* Right: Public Match History (clickable for Match Detail Modal) */}
+              <div className="lg:col-span-7 rounded-3xl bg-stone-900/90 border-2 border-stone-700 p-4 sm:p-5 space-y-3">
+                <div className="flex items-center justify-between pb-3 border-b border-stone-800">
+                  <h4 className="font-serif font-black text-base uppercase tracking-wider text-amber-200">
+                    Partidas Recentes de {inspectedProfile.nickname}
+                  </h4>
                   <span className="text-[11px] font-mono text-stone-400">
-                    {searchResults.length} encontrados
+                    {inspectedProfile.recentMatches.length} registros · clique para detalhar
                   </span>
                 </div>
 
-                {searching || loadingInspected ? (
-                  <p className="text-center text-xs text-stone-400 py-12">
-                    Consultando os registros do Santuário...
+                {inspectedProfile.recentMatches.length === 0 ? (
+                  <p className="text-center text-xs text-stone-500 py-10">
+                    Este duelista ainda não concluiu partidas registradas.
                   </p>
-                ) : searchResults.length === 0 ? (
-                  <div className="py-12 rounded-2xl bg-stone-900/60 border border-dashed border-stone-700 text-center space-y-1">
-                    <p className="text-sm font-serif font-bold text-stone-300">
-                      Nenhum jogador encontrado com esse @nick.
-                    </p>
-                    <p className="text-xs text-stone-500">
-                      Verifique a grafia ou pesquise por parte do @nick.
-                    </p>
-                  </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {searchResults.map((p) => {
-                      const rInfo = getRankInfo(p.rankPoints, {
-                        globalBlockedFromTier: rankPolicy.blockedFromTier,
-                        playerBlockedTotal: p.rankBlockedTotal,
-                        playerBlockedFromTier: p.rankBlockFromTier,
-                      });
-                      const isMe = playerState?.uid === p.uid;
+                  <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                    {inspectedProfile.recentMatches.map((m) => {
+                      const isWin = m.result === 'victory';
+                      const showRpPill = m.mode === 'pvp_ranked' || m.rpChange !== 0;
                       return (
                         <button
-                          key={p.uid}
+                          key={m.id}
                           type="button"
-                          onClick={() => void handleInspectPlayer(p.uid)}
-                          className="group text-left p-4 rounded-2xl bg-stone-900/85 hover:bg-stone-800/95 border-2 border-stone-700/85 hover:border-cyan-400/75 transition-all cursor-pointer shadow-md flex flex-col justify-between gap-3"
+                          onClick={() => {
+                            sound.playDraw();
+                            setSelectedMatchDetail({
+                              match: m,
+                              playerName: inspectedProfile.nickname,
+                            });
+                          }}
+                          className={`group w-full text-left p-3 rounded-xl border flex items-center justify-between gap-2 text-xs transition-all cursor-pointer ${
+                            isWin
+                              ? 'bg-cyan-950/25 border-cyan-500/40 hover:border-cyan-300'
+                              : 'bg-rose-950/25 border-rose-500/40 hover:border-rose-300'
+                          }`}
                         >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <AvatarPortrait
-                              avatarId={p.avatarId}
-                              size="md"
-                              isAdmin={p.isAdmin}
-                              showFrameGem
-                            />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-serif font-black text-sm text-amber-100 group-hover:text-white truncate">
-                                  {p.nickname}
-                                </span>
-                                {isMe && (
-                                  <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-[9px] font-mono font-bold text-cyan-300">
-                                    VOCÊ
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] font-mono text-stone-400">
-                                Nv.{p.level} · {rInfo.label} ({p.rankPoints} RP)
-                              </p>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`font-serif font-black uppercase ${
+                                  isWin ? 'text-cyan-300' : 'text-rose-400'
+                                }`}
+                              >
+                                {isWin ? 'Vitória' : 'Derrota'}
+                              </span>
+                              <span
+                                className={`px-1.5 py-0.5 rounded border text-[9px] font-mono font-bold uppercase ${getMatchModeBadgeClass(
+                                  m.mode
+                                )}`}
+                              >
+                                {getMatchModeLabel(m.mode)}
+                              </span>
                             </div>
+                            <span className="text-stone-400 font-mono text-[10px] block truncate max-w-[180px]">
+                              {m.deckName}
+                            </span>
                           </div>
-
-                          <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-stone-800">
-                            <span className="text-cyan-300 font-bold">
-                              {p.wins}V / {p.losses}D
+                          {showRpPill ? (
+                            <span
+                              className={`px-2 py-0.5 rounded-full bg-stone-950 border font-mono font-bold shrink-0 ${
+                                m.rpChange >= 0
+                                  ? 'border-amber-500/40 text-amber-300'
+                                  : 'border-rose-500/40 text-rose-300'
+                              }`}
+                            >
+                              {m.rpChange > 0 ? `+${m.rpChange}` : m.rpChange} RP
                             </span>
-                            <span className="text-purple-300">
-                              {p.unlockedCount}/{p.totalCollectible} cartas
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-stone-950 border border-cyan-500/35 font-mono text-cyan-300 font-bold shrink-0">
+                              +{m.xpEarned ?? 0} XP
                             </span>
-                            <span className="text-amber-300 font-serif font-bold uppercase text-[10px] group-hover:translate-x-0.5 transition-transform">
-                              Ver Perfil →
-                            </span>
+                          )}
+                          <div className="flex items-center gap-1.5 text-right min-w-0 shrink-0">
+                            <div>
+                              <span className="text-stone-200 font-bold block truncate max-w-[120px]">
+                                vs {m.opponentName}
+                              </span>
+                              <span className="text-[10px] font-mono text-stone-400">
+                                {m.date}
+                              </span>
+                            </div>
+                            <ChevronRight
+                              size={14}
+                              className="text-stone-500 group-hover:text-amber-300 shrink-0"
+                            />
                           </div>
                         </button>
                       );
@@ -1157,10 +1259,541 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        ) : activeTab === 'leaderboard' ? (
+          /* ================================================================ */
+          /* TAB 2: RANKING GERAL DE JOGADORES (DADOS REAIS DO BANCO)         */
+          /* ================================================================ */
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-amber-950/35 via-stone-900/90 to-stone-900/90 border-2 border-amber-500/40 shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-400/50 flex items-center justify-center text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+                  <Trophy size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-serif font-black uppercase tracking-wider text-amber-200">
+                    Ranking Geral de Jogadores
+                  </h3>
+                  <p className="text-[11px] font-mono text-stone-400">
+                    Classificação oficial em tempo real · jogadores ranqueados no topo, ordenados por RP, vitórias e nível
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-mono text-stone-400">
+                  {leaderboard.length} jogadores
+                </span>
+                <button
+                  type="button"
+                  disabled={leaderboardLoading}
+                  onClick={() => {
+                    sound.playDraw();
+                    void loadLeaderboard();
+                  }}
+                  className="px-3 py-2 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-700 hover:border-amber-400/60 text-xs font-mono font-bold text-amber-200 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+                >
+                  <RefreshCw size={13} className={leaderboardLoading ? 'animate-spin' : ''} />
+                  <span>Atualizar</span>
+                </button>
+              </div>
+            </div>
+
+            {leaderboardError && (
+              <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs flex items-center gap-2">
+                <AlertCircle size={15} className="text-rose-400 shrink-0" />
+                <span>{leaderboardError}</span>
+              </div>
             )}
+
+            {leaderboardLoading || loadingInspected ? (
+              <div className="py-16 text-center text-xs font-mono text-stone-400">
+                Consultando a classificação oficial do Reino...
+              </div>
+            ) : leaderboard.length === 0 ? (
+              <div className="py-16 rounded-2xl bg-stone-900/60 border border-dashed border-stone-700 text-center space-y-1">
+                <p className="text-sm font-serif font-bold text-stone-300">
+                  Nenhum jogador registrado no ranking ainda.
+                </p>
+                <p className="text-xs text-stone-500">
+                  Assim que os duelistas entrarem na arena, suas posições aparecerão aqui.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {leaderboard.map((entry) => {
+                  const rInfo = getRankInfo(entry.rankPoints, {
+                    hasPlayedRanked: (entry.rankedMatchesPlayed ?? 0) > 0,
+                    globalBlockedFromTier: rankPolicy.blockedFromTier,
+                    playerBlockedTotal: entry.rankBlockedTotal,
+                    playerBlockedFromTier: entry.rankBlockFromTier,
+                  });
+                  const isMe = playerState?.uid === entry.uid;
+                  const totalGames = entry.wins + entry.losses;
+                  const winRate =
+                    totalGames > 0 ? Math.round((entry.wins / totalGames) * 100) : null;
+
+                  const podiumClass =
+                    entry.position === 1
+                      ? 'border-amber-400/75 bg-gradient-to-r from-amber-950/45 via-stone-900/95 to-stone-900/90 shadow-[0_0_24px_rgba(245,158,11,0.16)]'
+                      : entry.position === 2
+                        ? 'border-slate-300/60 bg-gradient-to-r from-slate-800/45 via-stone-900/95 to-stone-900/90'
+                        : entry.position === 3
+                          ? 'border-orange-400/60 bg-gradient-to-r from-orange-950/40 via-stone-900/95 to-stone-900/90'
+                          : isMe
+                            ? 'border-cyan-400/65 bg-gradient-to-r from-cyan-950/35 via-stone-900/95 to-stone-900/90'
+                            : 'border-stone-700/80 bg-stone-900/85 hover:border-amber-400/50';
+
+                  return (
+                    <button
+                      key={entry.uid}
+                      type="button"
+                      onClick={() => void handleInspectPlayer(entry.uid, 'leaderboard')}
+                      className={`group w-full text-left p-3 sm:p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${podiumClass}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Rank Position Badge */}
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center font-mono font-black text-sm shrink-0 border ${
+                            entry.position === 1
+                              ? 'bg-amber-400/20 border-amber-300 text-amber-200'
+                              : entry.position === 2
+                                ? 'bg-slate-300/15 border-slate-300 text-slate-200'
+                                : entry.position === 3
+                                  ? 'bg-orange-400/20 border-orange-400 text-orange-200'
+                                  : 'bg-stone-950 border-stone-700 text-stone-400'
+                          }`}
+                        >
+                          {entry.position === 1 ? (
+                            <Crown size={18} className="text-amber-300" />
+                          ) : (
+                            `#${entry.position}`
+                          )}
+                        </div>
+
+                        <AvatarPortrait
+                          avatarId={entry.avatarId}
+                          size="md"
+                          isAdmin={entry.isAdmin}
+                          showFrameGem
+                        />
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-serif font-black text-sm sm:text-base text-amber-100 group-hover:text-white truncate">
+                              {entry.nickname}
+                            </span>
+                            {isMe && (
+                              <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[9px] font-mono font-bold text-cyan-300">
+                                VOCÊ
+                              </span>
+                            )}
+                            {entry.isAdmin && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-[9px] font-mono font-bold text-amber-300">
+                                ADMIN
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] font-mono text-stone-400 flex items-center gap-2 flex-wrap">
+                            <span>Nv.{entry.level}</span>
+                            <span>·</span>
+                            <span className="text-cyan-300 font-bold">
+                              {entry.wins}V/{entry.losses}D
+                            </span>
+                            {winRate !== null && (
+                              <>
+                                <span>·</span>
+                                <span className="text-stone-300">{winRate}% vit.</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <div className="text-right">
+                          <div
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-b ${rInfo.badgeGradient} border ${rInfo.borderClass} text-[11px] font-serif font-black ${rInfo.textColor}`}
+                          >
+                            <span>{rInfo.icon}</span>
+                            <span>{rInfo.label}</span>
+                          </div>
+                          <div className="text-[10px] font-mono text-stone-400 mt-1 tabular-nums">
+                            {rInfo.isUnranked ? 'Sem rank' : `${entry.rankPoints} RP`}
+                          </div>
+                        </div>
+                        <ChevronRight
+                          size={16}
+                          className="text-stone-500 group-hover:text-amber-300 group-hover:translate-x-0.5 transition-all"
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* ================================================================ */
+          /* TAB 3: PESQUISAR PERFIS DE OUTROS JOGADORES                      */
+          /* ================================================================ */
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-5">
+            {/* Search Form */}
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-3.5 rounded-2xl bg-stone-900/90 border-2 border-cyan-500/35 shadow-lg"
+            >
+              <div className="relative flex-1">
+                <Search
+                  size={16}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-cyan-400"
+                />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Digite o @nick do duelista (ex: @arcanista)"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-stone-950 border border-stone-700 focus:border-cyan-400 text-sm font-mono text-stone-100 placeholder-stone-500 focus:outline-none"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={searching}
+                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:brightness-110 disabled:opacity-50 text-white font-serif font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg flex items-center justify-center gap-2"
+              >
+                <Search size={15} />
+                <span>{searching ? 'Buscando...' : 'Pesquisar'}</span>
+              </button>
+            </form>
+
+            {searchError && (
+              <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs flex items-center gap-2">
+                <AlertCircle size={15} className="text-rose-400 shrink-0" />
+                <span>{searchError}</span>
+              </div>
+            )}
+
+            {/* SEARCH RESULTS GRID */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs sm:text-sm font-serif font-black uppercase tracking-widest text-amber-200 flex items-center gap-2">
+                  <Users size={15} className="text-cyan-400" />
+                  <span>
+                    {searchQuery.trim()
+                      ? `Resultados para "${searchQuery.trim()}"`
+                      : 'Duelistas em Destaque no Reino'}
+                  </span>
+                </h3>
+                <span className="text-[11px] font-mono text-stone-400">
+                  {searchResults.length} encontrados
+                </span>
+              </div>
+
+              {searching || loadingInspected ? (
+                <p className="text-center text-xs text-stone-400 py-12">
+                  Consultando os registros do Santuário...
+                </p>
+              ) : searchResults.length === 0 ? (
+                <div className="py-12 rounded-2xl bg-stone-900/60 border border-dashed border-stone-700 text-center space-y-1">
+                  <p className="text-sm font-serif font-bold text-stone-300">
+                    Nenhum jogador encontrado com esse @nick.
+                  </p>
+                  <p className="text-xs text-stone-500">
+                    Verifique a grafia ou pesquise por parte do @nick.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {searchResults.map((p) => {
+                    const rInfo = getRankInfo(p.rankPoints, {
+                      hasPlayedRanked: (p.rankedMatchesPlayed ?? 0) > 0,
+                      globalBlockedFromTier: rankPolicy.blockedFromTier,
+                      playerBlockedTotal: p.rankBlockedTotal,
+                      playerBlockedFromTier: p.rankBlockFromTier,
+                    });
+                    const isMe = playerState?.uid === p.uid;
+                    return (
+                      <button
+                        key={p.uid}
+                        type="button"
+                        onClick={() => void handleInspectPlayer(p.uid, 'search_players')}
+                        className="group text-left p-4 rounded-2xl bg-stone-900/85 hover:bg-stone-800/95 border-2 border-stone-700/85 hover:border-cyan-400/75 transition-all cursor-pointer shadow-md flex flex-col justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <AvatarPortrait
+                            avatarId={p.avatarId}
+                            size="md"
+                            isAdmin={p.isAdmin}
+                            showFrameGem
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-serif font-black text-sm text-amber-100 group-hover:text-white truncate">
+                                {p.nickname}
+                              </span>
+                              {isMe && (
+                                <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-[9px] font-mono font-bold text-cyan-300">
+                                  VOCÊ
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] font-mono text-stone-400">
+                              Nv.{p.level} · {rInfo.label}
+                              {!rInfo.isUnranked ? ` (${p.rankPoints} RP)` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] font-mono pt-2 border-t border-stone-800">
+                          <span className="text-cyan-300 font-bold">
+                            {p.wins}V / {p.losses}D
+                          </span>
+                          <span className="text-purple-300">
+                            {p.unlockedCount}/{p.totalCollectible} cartas
+                          </span>
+                          <span className="text-amber-300 font-serif font-bold uppercase text-[10px] group-hover:translate-x-0.5 transition-transform">
+                            Ver Perfil →
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* ================================================================= */}
+      {/* MATCH HISTORY DETAIL MODAL (STRICTLY REAL PERSISTED MATCH DATA)   */}
+      {/* ================================================================= */}
+      {selectedMatchDetail && (() => {
+        const { match, playerName } = selectedMatchDetail;
+        const isVictory = match.result === 'victory';
+        const isRanked = match.mode === 'pvp_ranked';
+        const hasHpData = match.playerHp !== undefined && match.playerHp !== null;
+        const hasOppHpData = match.opponentHp !== undefined && match.opponentHp !== null;
+        const hasRoundsData = match.totalRounds !== undefined && match.totalRounds !== null;
+        const hasEndReason = Boolean(match.endReason && match.endReason.trim().length > 0);
+        const lossStreakBonus = match.lossStreakBonus ?? 0;
+
+        return (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn"
+            onClick={(e) => {
+              e.stopPropagation();
+              sound.playDraw();
+              setSelectedMatchDetail(null);
+            }}
+          >
+            <div
+              className={`relative w-full max-w-lg rounded-3xl bg-slate-950/98 border-2 shadow-[0_0_50px_rgba(0,0,0,0.95)] overflow-hidden ${
+                isVictory ? 'border-cyan-400/70' : 'border-rose-500/70'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Top Result Banner */}
+              <div
+                className={`px-5 py-4 border-b flex items-center justify-between gap-3 ${
+                  isVictory
+                    ? 'bg-gradient-to-r from-cyan-950/80 via-slate-900 to-slate-950 border-cyan-500/40'
+                    : 'bg-gradient-to-r from-rose-950/80 via-slate-900 to-slate-950 border-rose-500/40'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`text-xl font-serif font-black tracking-wider ${
+                        isVictory ? 'text-cyan-300' : 'text-rose-400'
+                      }`}
+                    >
+                      {isVictory ? 'VITÓRIA' : 'DERROTA'}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-lg border text-[10px] font-mono font-bold uppercase ${getMatchModeBadgeClass(
+                        match.mode
+                      )}`}
+                    >
+                      {getMatchModeLabel(match.mode)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-stone-400">
+                    <Clock size={12} />
+                    <span>{formatMatchDateTime(match)}</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playDraw();
+                    setSelectedMatchDetail(null);
+                  }}
+                  className="p-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+                  aria-label="Fechar detalhes da partida"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Combatants & Deck */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-stone-700/80 space-y-1">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400">
+                      Jogador & Deck
+                    </span>
+                    <p className="font-serif font-black text-sm text-amber-200 truncate">
+                      {playerName}
+                    </p>
+                    <p className="text-xs font-mono text-stone-300 truncate">
+                      Deck: <span className="text-cyan-200">{match.deckName}</span>
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-stone-700/80 space-y-1">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400">
+                      Oponente
+                    </span>
+                    <p className="font-serif font-black text-sm text-stone-100 truncate">
+                      {match.opponentName}
+                    </p>
+                    <p className="text-xs font-mono text-amber-300/90 truncate">
+                      Rank: {match.opponentRank || 'Sem rank'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Special Ranked Bonus Badges (Only shown when genuinely earned) */}
+                {(match.isPerfectVictory || lossStreakBonus > 0) && (
+                  <div className="flex flex-wrap gap-2">
+                    {match.isPerfectVictory && (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/70 border border-emerald-400/60 text-emerald-200 text-xs font-mono font-bold">
+                        <Sparkles size={13} className="text-emerald-300" />
+                        <span>Vitória Perfeita (+5 RP)</span>
+                      </div>
+                    )}
+                    {lossStreakBonus > 0 && (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-950/70 border border-amber-400/60 text-amber-200 text-xs font-mono font-bold">
+                        <Flame size={13} className="text-amber-300" />
+                        <span>Quebra de Sequência (+{lossStreakBonus} RP)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Battle Telemetry */}
+                <div className="grid grid-cols-3 gap-2.5 text-center">
+                  <div className="p-3 rounded-2xl bg-stone-900/85 border border-stone-800 space-y-1">
+                    <div className="flex items-center justify-center gap-1 text-emerald-300 font-mono font-black text-sm tabular-nums">
+                      <Heart size={13} />
+                      <span>
+                        {hasHpData
+                          ? match.playerMaxHp != null
+                            ? `${match.playerHp}/${match.playerMaxHp}`
+                            : `${match.playerHp}`
+                          : '—'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono uppercase text-stone-400 block">
+                      Sua Vida
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-stone-900/85 border border-stone-800 space-y-1">
+                    <div className="flex items-center justify-center gap-1 text-rose-300 font-mono font-black text-sm tabular-nums">
+                      <Swords size={13} />
+                      <span>{hasOppHpData ? `${match.opponentHp}` : '—'}</span>
+                    </div>
+                    <span className="text-[10px] font-mono uppercase text-stone-400 block">
+                      Vida Oponente
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-stone-900/85 border border-stone-800 space-y-1">
+                    <div className="text-cyan-200 font-mono font-black text-sm tabular-nums">
+                      {hasRoundsData ? `${match.totalRounds}` : '—'}
+                    </div>
+                    <span className="text-[10px] font-mono uppercase text-stone-400 block">
+                      Rodadas
+                    </span>
+                  </div>
+                </div>
+
+                {hasEndReason && (
+                  <div className="px-3.5 py-2.5 rounded-xl bg-stone-900/80 border border-stone-800 flex items-center justify-between gap-2 text-xs">
+                    <span className="font-mono text-stone-400 uppercase text-[10px]">
+                      Encerramento
+                    </span>
+                    <span className="font-serif font-bold text-stone-200 text-right">
+                      {match.endReason}
+                    </span>
+                  </div>
+                )}
+
+                {/* Rewards Breakdown */}
+                <div className="p-3.5 rounded-2xl bg-stone-900/90 border border-stone-700/80 space-y-2.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400 block">
+                    Recompensas & Pontuação
+                  </span>
+                  <div className={`grid gap-2 text-center ${(match.goldEarned ?? 0) > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
+                    <div className="p-2.5 rounded-xl bg-stone-950 border border-amber-500/35">
+                      <div
+                        className={`text-sm font-mono font-black tabular-nums ${
+                          !isRanked && match.rpChange === 0
+                            ? 'text-stone-400'
+                            : match.rpChange >= 0
+                              ? 'text-amber-300'
+                              : 'text-rose-400'
+                        }`}
+                      >
+                        {isRanked || match.rpChange !== 0
+                          ? `${match.rpChange > 0 ? `+${match.rpChange}` : match.rpChange} RP`
+                          : '0 RP'}
+                      </div>
+                      <div className="text-[10px] text-stone-500 uppercase font-bold mt-0.5">
+                        {isRanked ? 'Ranqueada' : 'Sem Rank'}
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-stone-950 border border-sky-500/35">
+                      <div className="text-sm font-mono font-black text-sky-300 tabular-nums">
+                        {match.xpEarned !== undefined ? `+${match.xpEarned} XP` : '—'}
+                      </div>
+                      <div className="text-[10px] text-stone-500 uppercase font-bold mt-0.5">
+                        Experiência
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-stone-950 border border-cyan-400/40">
+                      <div className="text-sm font-mono font-black text-cyan-200 tabular-nums flex items-center justify-center gap-1">
+                        <Gem size={12} className="text-cyan-300" />
+                        <span>{match.crystalsEarned !== undefined ? `+${match.crystalsEarned}` : '+0'}</span>
+                      </div>
+                      <div className="text-[10px] text-stone-500 uppercase font-bold mt-0.5">
+                        Cristais
+                      </div>
+                    </div>
+
+                    {(match.goldEarned ?? 0) > 0 && (
+                      <div className="p-2.5 rounded-xl bg-stone-950 border border-yellow-500/35">
+                        <div className="text-sm font-mono font-black text-yellow-300 tabular-nums">
+                          +{match.goldEarned}
+                        </div>
+                        <div className="text-[10px] text-stone-500 uppercase font-bold mt-0.5">
+                          Ouro (Marco)
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

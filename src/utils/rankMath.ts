@@ -2,6 +2,7 @@
 // Strictly browser-free so Node.js imports never pull Firebase client SDKs.
 
 export type RankTier = 'Bronze' | 'Prata' | 'Ouro' | 'Platina' | 'Diamante' | 'Celestial';
+export type RankDisplayTier = RankTier | 'Sem rank';
 export type RankDivision = 3 | 2 | 1;
 
 export interface RankPolicyConfig {
@@ -14,15 +15,19 @@ export interface RankLockContext {
   globalBlockedFromTier?: RankTier | null;
   playerBlockedTotal?: boolean;
   playerBlockedFromTier?: RankTier | null;
+  /** When false, player has not played their first ranked match yet and displays as "Sem rank". */
+  hasPlayedRanked?: boolean;
 }
 
 export interface RankInfo {
-  tier: RankTier;
-  division: RankDivision;
-  divisionRoman: 'III' | 'II' | 'I';
-  label: string; // e.g. "Bronze III", "Prata I", "Celestial I"
-  rawTier: RankTier;
-  rawDivision: RankDivision;
+  tier: RankDisplayTier;
+  division: RankDivision | null;
+  divisionRoman: 'III' | 'II' | 'I' | '';
+  label: string; // e.g. "Sem rank", "Bronze III", "Prata I", "Celestial"
+  isUnranked: boolean;
+  isCelestialPeak: boolean;
+  rawTier: RankDisplayTier;
+  rawDivision: RankDivision | null;
   rawLabel: string;
   minPoints: number;
   maxPoints: number | null;
@@ -55,8 +60,20 @@ export const RANK_TIER_ORDER: readonly RankTier[] = [
 
 export const DIVISIONS_PER_TIER = 3;
 export const POINTS_PER_DIVISION = 100;
-export const POINTS_PER_TIER = DIVISIONS_PER_TIER * POINTS_PER_DIVISION; // 300 RP per Tier
-export const MAX_DIVISION_INDEX = RANK_TIER_ORDER.length * DIVISIONS_PER_TIER - 1; // 17 -> Celestial I (1700+)
+export const POINTS_PER_TIER = DIVISIONS_PER_TIER * POINTS_PER_DIVISION; // 300 RP per standard Tier
+// Bronze(0..2), Prata(3..5), Ouro(6..8), Platina(9..11), Diamante(12..14), Celestial(15 = single unique top division at 1500+ RP)
+export const MAX_DIVISION_INDEX = (RANK_TIER_ORDER.length - 1) * DIVISIONS_PER_TIER; // 15 -> Celestial (1500+)
+export const CELESTIAL_MIN_POINTS = MAX_DIVISION_INDEX * POINTS_PER_DIVISION; // 1500 RP
+
+export const UNRANKED_THEME = {
+  icon: '🛡️',
+  accentColor: '#94a3b8',
+  textColor: 'text-slate-300',
+  bgClass: 'bg-slate-900/75',
+  borderClass: 'border-slate-600/60',
+  badgeGradient: 'from-slate-700/70 via-slate-900 to-slate-950/90',
+  description: 'Jogue sua primeira partida PvP Ranqueada para ingressar no Bronze III.',
+} as const;
 
 export const RANK_TIER_THEMES: Record<
   RankTier,
@@ -122,7 +139,7 @@ export const RANK_TIER_THEMES: Record<
     bgClass: 'bg-purple-950/75',
     borderClass: 'border-fuchsia-400/80',
     badgeGradient: 'from-fuchsia-500/75 via-purple-900/80 to-indigo-950/90',
-    description: 'Soberanos supremos coroados sob as estrelas da Ordem Celestial.',
+    description: 'Divisão única suprema acessível aos soberanos coroados sob as estrelas da Ordem Celestial.',
   },
 };
 
@@ -139,11 +156,20 @@ export function getTierIndex(tier: RankTier): number {
 
 export function divisionIndexToTierAndDivision(divIndex: number): {
   tier: RankTier;
-  division: RankDivision;
-  divisionRoman: 'III' | 'II' | 'I';
+  division: RankDivision | null;
+  divisionRoman: 'III' | 'II' | 'I' | '';
   label: string;
 } {
   const clamped = Math.max(0, Math.min(MAX_DIVISION_INDEX, Math.floor(divIndex)));
+  // Celestial is a single unique peak rank (index 15 -> 1500+ RP)
+  if (clamped >= MAX_DIVISION_INDEX) {
+    return {
+      tier: 'Celestial',
+      division: null,
+      divisionRoman: '',
+      label: 'Celestial',
+    };
+  }
   const tierIdx = Math.floor(clamped / DIVISIONS_PER_TIER);
   const subIdx = clamped % DIVISIONS_PER_TIER; // 0 -> III, 1 -> II, 2 -> I
   const division = (3 - subIdx) as RankDivision;
@@ -176,20 +202,48 @@ export function getMaxAllowedDivisionIndex(blockedFromTier: RankTier | null): nu
     return 0;
   }
   // Blocking Ouro (tierIdx=2) caps players at Prata I -> index = 2 * 3 - 1 = 5
+  // Blocking Celestial (tierIdx=5) caps players at Diamante I -> index = 5 * 3 - 1 = 14
   return tierIdx * DIVISIONS_PER_TIER - 1;
 }
 
 export function getRankInfo(totalPoints: number, lockContext?: RankLockContext): RankInfo {
   const safePts = Math.max(0, Math.floor(Number.isFinite(totalPoints) ? totalPoints : 0));
+  const isTotallyBlocked = Boolean(lockContext?.playerBlockedTotal);
+  const effectiveBlockedFromTier = getEffectiveBlockedFromTier(lockContext);
+
+  // Players start as "Sem rank" until they complete their first Ranked PvP match
+  if (lockContext?.hasPlayedRanked === false) {
+    return {
+      tier: 'Sem rank',
+      division: null,
+      divisionRoman: '',
+      label: 'Sem rank',
+      isUnranked: true,
+      isCelestialPeak: false,
+      rawTier: 'Sem rank',
+      rawDivision: null,
+      rawLabel: 'Sem rank',
+      minPoints: 0,
+      maxPoints: 0,
+      totalPoints: 0,
+      pointsInDivision: 0,
+      pointsNeededPerDivision: POINTS_PER_DIVISION,
+      progressPercent: 0,
+      nextLabel: 'Bronze III',
+      isCapped: false,
+      isTotallyBlocked,
+      effectiveBlockedFromTier,
+      accumulatedBeyondCap: 0,
+      ...UNRANKED_THEME,
+    };
+  }
 
   // Uncapped / Real rank computed purely from accumulated points
   const rawDivIndex = Math.min(MAX_DIVISION_INDEX, Math.floor(safePts / POINTS_PER_DIVISION));
   const rawMeta = divisionIndexToTierAndDivision(rawDivIndex);
 
   // Effective cap (min of global cap and player cap)
-  const effectiveBlockedFromTier = getEffectiveBlockedFromTier(lockContext);
   const maxAllowedDivIdx = getMaxAllowedDivisionIndex(effectiveBlockedFromTier);
-  const isTotallyBlocked = Boolean(lockContext?.playerBlockedTotal);
 
   const displayedDivIndex = Math.min(rawDivIndex, maxAllowedDivIdx);
   const displayedMeta = divisionIndexToTierAndDivision(displayedDivIndex);
@@ -201,11 +255,7 @@ export function getRankInfo(totalPoints: number, lockContext?: RankLockContext):
 
   // If capped by an admin rank block (e.g. Bronze->Prata I locked before Ouro), show full 100/100 bar + accumulated overflow
   const accumulatedBeyondCap = isCapped ? Math.max(0, safePts - (maxAllowedCeilingEnd - 1)) : 0;
-  const pointsInDivision = isCapped
-    ? POINTS_PER_DIVISION
-    : isAtAbsolutePeak
-    ? safePts - minPoints
-    : safePts - minPoints;
+  const pointsInDivision = isCapped ? POINTS_PER_DIVISION : safePts - minPoints;
 
   const progressPercent = isCapped
     ? 100
@@ -226,6 +276,8 @@ export function getRankInfo(totalPoints: number, lockContext?: RankLockContext):
     division: displayedMeta.division,
     divisionRoman: displayedMeta.divisionRoman,
     label: displayedMeta.label,
+    isUnranked: false,
+    isCelestialPeak: isAtAbsolutePeak,
     rawTier: rawMeta.tier,
     rawDivision: rawMeta.division,
     rawLabel: rawMeta.label,
@@ -244,7 +296,80 @@ export function getRankInfo(totalPoints: number, lockContext?: RankLockContext):
   };
 }
 
+export interface RankedRpCalculationResult {
+  rpDelta: number;
+  baseRp: number;
+  lossStreakBrokenBonus: number;
+  perfectVictoryBonus: number;
+  nextLossStreak: number;
+  nextLastWinRp: number;
+}
+
+/**
+ * Authoritative PvP Ranked RP calculation:
+ * - Victory: +15 base RP (+10 if breaking a 3+ consecutive ranked loss streak, +5 if full-HP Perfect Victory; NO win-streak bonus).
+ * - Defeat: loses 50% (floored) of last ranked victory RP (default ref 15 -> 7), capped at -10.
+ *   Consecutive defeats escalate penalty: 1st = base (7), 2nd = base+2 (9), 3rd+ = base+3 (10 max).
+ *   Even if last win was 25 (from streak recovery) or 30, 50% is capped at -10.
+ */
+export function calculateRankedRpDelta(params: {
+  isVictory: boolean;
+  isPerfectVictory: boolean;
+  prevLossStreak: number;
+  lastRankedWinRp: number;
+  isRankBlockedTotal?: boolean;
+}): RankedRpCalculationResult {
+  const safePrevLossStreak = Math.max(0, Math.floor(params.prevLossStreak || 0));
+  const safeLastWinRp = Math.max(0, Math.floor(params.lastRankedWinRp || 0));
+
+  if (params.isRankBlockedTotal) {
+    return {
+      rpDelta: 0,
+      baseRp: 0,
+      lossStreakBrokenBonus: 0,
+      perfectVictoryBonus: 0,
+      nextLossStreak: params.isVictory ? 0 : safePrevLossStreak + 1,
+      nextLastWinRp: safeLastWinRp,
+    };
+  }
+
+  if (params.isVictory) {
+    const baseRp = 15;
+    const lossStreakBrokenBonus = safePrevLossStreak >= 3 ? 10 : 0;
+    const perfectVictoryBonus = params.isPerfectVictory ? 5 : 0;
+    const totalRp = baseRp + lossStreakBrokenBonus + perfectVictoryBonus;
+    return {
+      rpDelta: totalRp,
+      baseRp,
+      lossStreakBrokenBonus,
+      perfectVictoryBonus,
+      nextLossStreak: 0,
+      nextLastWinRp: totalRp,
+    };
+  }
+
+  // Defeat
+  const nextLossStreak = safePrevLossStreak + 1;
+  const referenceWinRp = safeLastWinRp > 0 ? safeLastWinRp : 15;
+  const baseLoss = Math.min(10, Math.floor(referenceWinRp * 0.5));
+  const escalation = nextLossStreak === 1 ? 0 : nextLossStreak === 2 ? 2 : 3;
+  const finalLoss = Math.min(10, baseLoss + escalation);
+
+  return {
+    rpDelta: -finalLoss,
+    baseRp: -baseLoss,
+    lossStreakBrokenBonus: 0,
+    perfectVictoryBonus: 0,
+    nextLossStreak,
+    nextLastWinRp: safeLastWinRp,
+  };
+}
+
+/**
+ * Legacy helper retained only for fallback UI estimation before server response.
+ * Always returns 0 for non-ranked modes; Ranked calculation is authoritative on the server.
+ */
 export function calculateRankDelta(isWinner: boolean, isDraw: boolean): number {
-  if (isDraw) return 5;
-  return isWinner ? 25 : -15;
+  if (isDraw) return 0;
+  return isWinner ? 15 : -7;
 }

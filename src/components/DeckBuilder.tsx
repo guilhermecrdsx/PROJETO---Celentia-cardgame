@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CARD_TEMPLATES } from '../data/cards';
 import { CardTemplate, KingdomType, TierType, ElementType } from '../types/game';
 import { createCardInstance, DECK_PRESETS, DEFAULT_DECK_IDS } from '../logic/deckFactory';
@@ -21,13 +21,13 @@ import {
   Save,
   Lock,
   Sparkles,
+  Gem,
 } from 'lucide-react';
 import {
   getCustomDeckSlots,
   saveCustomDeckSlot,
   resetCustomDeckSlot,
   getActiveSlotId,
-  setActiveSlotId,
   CustomDeckSlot,
 } from '../utils/customDeckSlots';
 import {
@@ -61,7 +61,7 @@ const ELEMENT_FILTER_OPTIONS: Array<{
   { id: 'Cósmico', label: 'Cósmico', icon: '🧬', activeClass: 'bg-indigo-600 text-white' },
   { id: 'Divino', label: 'Divino', icon: '⚜️', activeClass: 'bg-amber-300 text-stone-950' },
   { id: 'Sombrio', label: 'Sombrio', icon: '🌑', activeClass: 'bg-fuchsia-700 text-white' },
-  { id: 'Neutro', label: 'Neutro', icon: '⚪', activeClass: 'bg-stone-600 text-white' },
+  { id: 'Neutro', label: 'Neutro', icon: '🧭', activeClass: 'bg-stone-600 text-white' },
 ];
 
 export const DeckBuilder: React.FC<DeckBuilderProps> = ({
@@ -74,21 +74,39 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
   const [slots, setSlots] = useState<CustomDeckSlot[]>(() => getCustomDeckSlots());
   const [activeSlotId, setActiveSlotState] = useState<number>(() => {
     if (initialSlotId && initialSlotId >= 1 && initialSlotId <= 3) return initialSlotId;
-    return getActiveSlotId();
+    const active = getActiveSlotId();
+    return active >= 1 && active <= 3 ? active : 1;
   });
 
   const activeSlot = slots.find((s) => s.slotId === activeSlotId) || slots[0];
-  const [deckName, setDeckName] = useState<string>(activeSlot?.name || 'Espaço 1');
+  const [deckName, setDeckName] = useState<string>(activeSlot?.name || `Espaço Vazio ${activeSlotId}`);
   const [saveFeedback, setSaveFeedback] = useState<{ text: string; tone: 'success' | 'warn' } | null>(null);
 
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>(() => {
-    if (initialCardIds && initialCardIds.length === 20) {
-      return initialCardIds;
+    if (activeSlot && Array.isArray(activeSlot.cardIds) && activeSlot.cardIds.length === 20) {
+      return [...activeSlot.cardIds];
     }
-    return activeSlot?.cardIds || DEFAULT_DECK_IDS;
+    return [];
   });
 
+  // Reset slots immediately if the authenticated account changes (zero cross-account bleed)
+  useEffect(() => {
+    const accountSlots = getCustomDeckSlots();
+    setSlots(accountSlots);
+    const targetId =
+      initialSlotId && initialSlotId >= 1 && initialSlotId <= 3
+        ? initialSlotId
+        : activeSlotId >= 1 && activeSlotId <= 3
+        ? activeSlotId
+        : 1;
+    const slot = accountSlots.find((s) => s.slotId === targetId) || accountSlots[0];
+    setActiveSlotState(slot.slotId);
+    setDeckName(slot.name);
+    setSelectedCardIds(slot.cardIds.length === 20 ? [...slot.cardIds] : []);
+  }, [playerState?.uid]);
+
   // Filters
+  const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'owned'>('all');
   const [kingdomFilter, setKingdomFilter] = useState<'all' | KingdomType>('all');
   const [tierFilter, setTierFilter] = useState<'all' | TierType>('all');
   const [elementFilter, setElementFilter] = useState<'all' | ElementType>('all');
@@ -109,8 +127,14 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
   // Available collectible cards
   const collectibleCards = useMemo(() => getCollectibleCards(), []);
 
+  const ownedCollectibleCount = useMemo(
+    () => collectibleCards.filter((c) => isCardUnlocked(c.id)).length,
+    [collectibleCards, playerState?.unlockedCardIds]
+  );
+
   const filteredCards = useMemo(() => {
     const list = collectibleCards.filter((card) => {
+      if (ownershipFilter === 'owned' && !isCardUnlocked(card.id)) return false;
       if (kingdomFilter !== 'all' && card.kingdom !== kingdomFilter) return false;
       if (tierFilter !== 'all') {
         if (tierFilter === 5) {
@@ -143,7 +167,16 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
       }
       return a.name.localeCompare(b.name);
     });
-  }, [collectibleCards, kingdomFilter, tierFilter, elementFilter, typeFilter, searchQuery]);
+  }, [
+    collectibleCards,
+    ownershipFilter,
+    kingdomFilter,
+    tierFilter,
+    elementFilter,
+    typeFilter,
+    searchQuery,
+    playerState?.unlockedCardIds,
+  ]);
 
   const cardCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -227,17 +260,16 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
     if (newSlotId === activeSlotId) return;
 
     if (selectedCardIds.length === 20) {
-      saveCustomDeckSlot(activeSlotId, deckName, selectedCardIds);
+      saveCustomDeckSlot(activeSlotId, deckName, selectedCardIds, false);
     }
 
-    setActiveSlotId(newSlotId);
     setActiveSlotState(newSlotId);
     const updatedSlots = getCustomDeckSlots();
     setSlots(updatedSlots);
 
     const nextSlot = updatedSlots.find((s) => s.slotId === newSlotId) || updatedSlots[0];
     setDeckName(nextSlot.name);
-    setSelectedCardIds(nextSlot.cardIds);
+    setSelectedCardIds(nextSlot.cardIds.length === 20 ? [...nextSlot.cardIds] : []);
     sound.playDraw();
   };
 
@@ -247,27 +279,38 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
       showNotice(`Adicione exatamente 20 cartas para salvar (${selectedCardIds.length}/20).`, 'warn');
       return;
     }
-    const cleanName = deckName.trim() || `Espaço ${activeSlotId}`;
-    const updated = saveCustomDeckSlot(activeSlotId, cleanName, selectedCardIds);
-    setActiveSlotId(activeSlotId);
+    const cleanName =
+      deckName.trim() && !deckName.trim().startsWith('Espaço Vazio')
+        ? deckName.trim()
+        : `Baralho Personalizado ${activeSlotId}`;
+    const updated = saveCustomDeckSlot(activeSlotId, cleanName, selectedCardIds, true);
+    setDeckName(cleanName);
     setSlots(updated);
     onSaveDeck(selectedCardIds, cleanName);
     sound.playSpell();
-    showNotice(`Espaço ${activeSlotId} salvo e ativado!`);
+    showNotice(`Espaço ${activeSlotId} salvo na conta e ativado!`);
   };
 
   const handleResetSlot = () => {
     sound.playTick();
+    const wasActive = playerState?.activeSlotId === activeSlotId;
     const updated = resetCustomDeckSlot(activeSlotId);
     setSlots(updated);
     const restored = updated.find((s) => s.slotId === activeSlotId) || updated[0];
     setDeckName(restored.name);
-    setSelectedCardIds(restored.cardIds);
-    showNotice(`Espaço ${activeSlotId} restaurado.`, 'success', 2000);
+    setSelectedCardIds([]);
+    if (wasActive) {
+      onSaveDeck(
+        DEFAULT_DECK_IDS,
+        DECK_PRESETS[0]?.name || 'Tríade Elemental: Fogo, Raiz & Trovão'
+      );
+    }
+    showNotice(`Espaço ${activeSlotId} esvaziado.`, 'success', 2000);
   };
 
   const isDeckComplete = selectedCardIds.length === 20;
   const hasActiveFilters =
+    ownershipFilter !== 'all' ||
     kingdomFilter !== 'all' ||
     tierFilter !== 'all' ||
     elementFilter !== 'all' ||
@@ -317,10 +360,14 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
             </div>
           )}
 
-          {/* Gold Counter */}
+          {/* Crystals & Gold Counters */}
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-950/90 border border-cyan-500/35 font-mono tabular-nums text-xs text-cyan-300 font-bold">
+            <Gem size={13} className="text-cyan-400" />
+            <span>{playerState?.crystals ?? 0}</span>
+          </div>
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-950/90 border border-amber-500/35 font-mono tabular-nums text-xs text-amber-300 font-bold">
             <span>🪙</span>
-            <span>{playerState?.gold ?? 1000}</span>
+            <span>{playerState?.gold ?? 0}</span>
           </div>
 
           {/* 20-Card Completion Gauge */}
@@ -589,6 +636,7 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      setOwnershipFilter('all');
                       setKingdomFilter('all');
                       setTierFilter('all');
                       setElementFilter('all');
@@ -605,6 +653,40 @@ export const DeckBuilder: React.FC<DeckBuilderProps> = ({
 
             {/* Segmented Filter Groups */}
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              {/* Ownership Filter: All vs Owned Only */}
+              <div className="flex items-center gap-0.5 bg-stone-950 p-1 rounded-xl border border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playTick();
+                    setOwnershipFilter('all');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                    ownershipFilter === 'all'
+                      ? 'bg-stone-200 text-stone-950'
+                      : 'text-stone-400 hover:text-stone-100'
+                  }`}
+                >
+                  Todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playTick();
+                    setOwnershipFilter('owned');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer flex items-center gap-1 tabular-nums ${
+                    ownershipFilter === 'owned'
+                      ? 'bg-emerald-500 text-stone-950'
+                      : 'text-emerald-300/85 hover:text-emerald-200'
+                  }`}
+                  title="Mostrar apenas as cartas que você possui desbloqueadas"
+                >
+                  <Check size={12} />
+                  <span>Minhas ({ownedCollectibleCount})</span>
+                </button>
+              </div>
+
               {/* Kingdom */}
               <div className="flex items-center gap-0.5 bg-stone-950 p-1 rounded-xl border border-stone-800">
                 {(

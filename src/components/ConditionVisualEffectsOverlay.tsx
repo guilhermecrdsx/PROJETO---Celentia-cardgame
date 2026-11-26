@@ -1127,43 +1127,144 @@ export const ConditionVisualEffectsOverlay: React.FC<ConditionVisualEffectsOverl
         ctx.restore();
       }
 
-      // 9. REVELAR: Portal místico em formato de espiral
+      // 9. REVELAR (MODERNIZADO): Olho Arcano de Clarividência, Ondas Prismáticas e Astrolábio Rúnico
       else if (cond === 'revelar') {
         ctx.save();
         ctx.translate(targetX, targetY);
         ctx.globalAlpha = masterAlpha;
-        const pRad = Math.max(84, cardW * 0.72);
+        const pRad = Math.max(92, cardW * 0.82);
+        const expand = Math.min(1, progress / 0.24);
+        const openEase = 1 - Math.pow(1 - expand, 3);
+        const curRad = pRad * (0.42 + openEase * 0.58);
 
-        const pGrad = ctx.createRadialGradient(0, 0, 6, 0, 0, pRad * 1.2);
-        pGrad.addColorStop(0, 'rgba(224, 242, 254, 0.88)');
-        pGrad.addColorStop(0.45, 'rgba(56, 189, 248, 0.48)');
-        pGrad.addColorStop(0.8, 'rgba(139, 92, 246, 0.35)');
+        // 1. Halo prismático de clarividência
+        const pGrad = ctx.createRadialGradient(0, 0, 4, 0, 0, curRad * 1.45);
+        pGrad.addColorStop(0, 'rgba(255, 255, 255, 0.92)');
+        pGrad.addColorStop(0.24, 'rgba(125, 211, 252, 0.72)');
+        pGrad.addColorStop(0.55, 'rgba(56, 189, 248, 0.34)');
+        pGrad.addColorStop(0.82, 'rgba(167, 139, 250, 0.24)');
         pGrad.addColorStop(1, 'transparent');
         ctx.fillStyle = pGrad;
         ctx.beginPath();
-        ctx.arc(0, 0, pRad * 1.2, 0, Math.PI * 2);
+        ctx.arc(0, 0, curRad * 1.45, 0, Math.PI * 2);
         ctx.fill();
 
-        // Braços da espiral mística girando
-        for (let arm = 0; arm < 4; arm++) {
+        // 2. Duas ondas de varredura (scan) concêntricas expandindo para fora
+        for (let w = 0; w < 2; w++) {
+          const waveP = (progress * 1.55 + w * 0.45) % 1;
+          const waveR = curRad * (0.35 + waveP * 1.35);
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, (1 - waveP) * 0.85 * masterAlpha);
+          ctx.strokeStyle = w === 0 ? '#7dd3fc' : '#fde047';
+          ctx.lineWidth = 3.2 * (1 - waveP * 0.55);
+          ctx.shadowColor = w === 0 ? '#38bdf8' : '#f59e0b';
+          ctx.shadowBlur = 18;
           ctx.beginPath();
-          for (let step = 0; step <= 28; step++) {
-            const f = step / 28;
-            const ang = (arm * Math.PI) / 2 + f * Math.PI * 2.4 - timeSec * 4.5;
-            const rad = f * pRad;
-            const px = Math.cos(ang) * rad;
-            const py = Math.sin(ang) * rad;
-            if (step === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          }
-          ctx.strokeStyle = arm % 2 === 0 ? '#7dd3fc' : '#c084fc';
-          ctx.lineWidth = 3;
-          ctx.shadowColor = '#38bdf8';
-          ctx.shadowBlur = 16;
+          ctx.arc(0, 0, waveR, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // 3. Dois anéis astrolábio contra-rotativos com traços rúnicos
+        ctx.save();
+        ctx.rotate(timeSec * 1.4);
+        ctx.strokeStyle = 'rgba(186, 230, 253, 0.88)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 7, 3, 7]);
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(0, 0, curRad * 0.94, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // 8 marcadores cardinais dourados no anel
+        for (let m = 0; m < 8; m++) {
+          const a = (m * Math.PI) / 4;
+          const rIn = curRad * 0.86;
+          const rOut = curRad * 1.02;
+          ctx.strokeStyle = m % 2 === 0 ? '#fde047' : '#bae6fd';
+          ctx.lineWidth = m % 2 === 0 ? 2.4 : 1.4;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * rIn, Math.sin(a) * rIn);
+          ctx.lineTo(Math.cos(a) * rOut, Math.sin(a) * rOut);
           ctx.stroke();
         }
         ctx.restore();
-        drawBadge(targetX, targetY - cardH / 2 - 22, evt.labelOverride || '🔮 REVELAR (PORTAL DO GRIMÓRIO)', '#38bdf8', '#e0f2fe', masterAlpha);
+
+        ctx.save();
+        ctx.rotate(-timeSec * 2.1);
+        ctx.strokeStyle = 'rgba(192, 132, 252, 0.82)';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath();
+        ctx.arc(0, 0, curRad * 0.68, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // 4. Olho Místico de Clarividência abrindo-se no centro
+        const eyeOpen = Math.sin(Math.min(1, progress / 0.32) * Math.PI * 0.5);
+        const eyeW = curRad * 0.68;
+        const eyeH = curRad * 0.36 * eyeOpen;
+        ctx.save();
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 22;
+        ctx.strokeStyle = '#e0f2fe';
+        ctx.lineWidth = 2.8;
+        ctx.fillStyle = 'rgba(12, 74, 110, 0.62)';
+        ctx.beginPath();
+        ctx.moveTo(-eyeW, 0);
+        ctx.quadraticCurveTo(0, -eyeH * 1.9, eyeW, 0);
+        ctx.quadraticCurveTo(0, eyeH * 1.9, -eyeW, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Íris dourado-celeste e pupila vertical luminosa
+        const irisR = Math.max(8, eyeH * 0.72);
+        const irisGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, irisR);
+        irisGrad.addColorStop(0, '#ffffff');
+        irisGrad.addColorStop(0.45, '#fde047');
+        irisGrad.addColorStop(0.85, '#38bdf8');
+        irisGrad.addColorStop(1, '#1d4ed8');
+        ctx.fillStyle = irisGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, irisR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Brilho em cruz de estrela no centro da pupila
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        const starLen = irisR * (1.2 + Math.sin(timeSec * 12) * 0.25);
+        ctx.beginPath();
+        ctx.moveTo(-starLen, 0);
+        ctx.lineTo(starLen, 0);
+        ctx.moveTo(0, -starLen * 0.75);
+        ctx.lineTo(0, starLen * 0.75);
+        ctx.stroke();
+        ctx.restore();
+
+        // 5. Partículas estelares orbitais e ascendentes
+        for (let s = 0; s < 16; s++) {
+          const ang = (s / 16) * Math.PI * 2 + timeSec * (s % 2 === 0 ? 1.8 : -1.3);
+          const dist = curRad * (0.45 + ((s * 0.19 + progress * 0.9) % 0.85));
+          const sx = Math.cos(ang) * dist;
+          const sy = Math.sin(ang) * dist - progress * 16;
+          ctx.fillStyle = s % 3 === 0 ? '#fef08a' : s % 3 === 1 ? '#e0f2fe' : '#c4b5fd';
+          ctx.beginPath();
+          ctx.arc(sx, sy, s % 3 === 0 ? 3.2 : 2.1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+        drawBadge(
+          targetX,
+          targetY - cardH / 2 - 24,
+          evt.labelOverride || '👁️ REVELAR · VISÃO DO GRIMÓRIO',
+          '#38bdf8',
+          '#e0f2fe',
+          masterAlpha
+        );
       }
 
       // 10. BARREIRA (Com GELO quando Aurora!)

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Coins, SkipForward, Sparkles, X } from 'lucide-react';
+import { Gem, SkipForward, Sparkles, X } from 'lucide-react';
 import { CardTemplate } from '../types/game';
 import { createCardInstance } from '../logic/deckFactory';
 import { CardView } from './CardView';
@@ -11,7 +11,7 @@ import { useVisualPreferences } from '../utils/visualTheme';
 
 export interface PackChestRevealResult {
   drops: Array<PackDropItemDTO & { template: CardTemplate }>;
-  totalRefundGold: number;
+  totalRefundCrystals: number;
   usedFreePack: boolean;
 }
 
@@ -827,15 +827,15 @@ export const PackChestOpeningModal: React.FC<PackChestOpeningModalProps> = ({
                 {result.drops.length} cartas obtidas
                 {newCardsCount > 0 ? ` · ${newCardsCount} nova${newCardsCount > 1 ? 's' : ''}` : ''}
                 {dupCardsCount > 0 ? ` · ${dupCardsCount} repetida${dupCardsCount > 1 ? 's' : ''}` : ''}
-                {result.totalRefundGold > 0 ? ` · +${result.totalRefundGold} Ouro reembolsado` : ''}
+                {result.totalRefundCrystals > 0 ? ` · +${result.totalRefundCrystals} Cristais reembolsados` : ''}
               </p>
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
-              {result.totalRefundGold > 0 && (
-                <div className="hidden sm:flex items-center gap-1.5 text-sm font-mono font-black text-amber-300 tabular-nums">
-                  <Coins size={16} className="text-amber-400 shrink-0" />
-                  <span>+{result.totalRefundGold}</span>
+              {result.totalRefundCrystals > 0 && (
+                <div className="hidden sm:flex items-center gap-1.5 text-sm font-mono font-black text-cyan-300 tabular-nums">
+                  <Gem size={16} className="text-cyan-400 shrink-0" />
+                  <span>+{result.totalRefundCrystals}</span>
                 </div>
               )}
               <button
@@ -922,8 +922,9 @@ export const PackChestOpeningModal: React.FC<PackChestOpeningModalProps> = ({
                         Tier {drop.template.tier} · {elemMeta?.icon} {drop.template.element}
                       </div>
                       {drop.isDuplicate ? (
-                        <div className="text-[11px] font-mono font-bold text-amber-300 tabular-nums">
-                          REPETIDA · +{drop.refundGold} 🪙
+                        <div className="text-[11px] font-mono font-bold text-cyan-300 tabular-nums flex items-center justify-center gap-1">
+                          <Gem size={11} className="text-cyan-400 shrink-0" />
+                          <span>REPETIDA · +{drop.refundCrystals} Cristais</span>
                         </div>
                       ) : (
                         <div className="text-[11px] font-mono font-extrabold text-emerald-300 tracking-wide">

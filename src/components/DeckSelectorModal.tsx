@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CARD_TEMPLATES } from '../data/cards';
-import { DECK_PRESETS } from '../logic/deckFactory';
+import { DECK_PRESETS, DEFAULT_DECK_IDS } from '../logic/deckFactory';
 import {
   getCustomDeckSlots,
   resetCustomDeckSlot,
   CustomDeckSlot,
   setActiveSlotId,
   getActiveSlotId,
+  deactivateCustomDeckSlots,
+  isCustomDeckSlotFilled,
 } from '../utils/customDeckSlots';
-import { Layers, Check, Edit3, X, Sparkles, Swords, RotateCcw, Flame, Wand2, Compass, Skull, Crown, Snowflake } from 'lucide-react';
+import { useCloudPlayerState } from '../services/accountApi';
+import { Layers, Check, Edit3, X, Sparkles, Swords, Trash2, Flame, Wand2, Compass, Skull, Crown, Snowflake, Plus } from 'lucide-react';
 import { sound } from '../services/soundEffects';
 
 interface DeckSelectorModalProps {
@@ -28,13 +31,19 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
   onClose,
   hideBuilderActions = false,
 }) => {
+  const { playerState } = useCloudPlayerState();
   const [activeTab, setActiveTab] = useState<'presets' | 'custom'>('presets');
   const [customSlots, setCustomSlots] = useState<CustomDeckSlot[]>(() => getCustomDeckSlots());
+
+  // Always re-sync custom slots from the currently authenticated cloud account
+  useEffect(() => {
+    setCustomSlots(getCustomDeckSlots());
+  }, [isOpen, playerState?.uid, playerState?.decks]);
 
   if (!isOpen) return null;
 
   const isCurrentActive = (cardIds: string[]) => {
-    if (cardIds.length !== activeDeckCardIds.length) return false;
+    if (cardIds.length !== 20 || cardIds.length !== activeDeckCardIds.length) return false;
     const sortedA = [...cardIds].sort();
     const sortedB = [...activeDeckCardIds].sort();
     return sortedA.every((val, idx) => val === sortedB[idx]);
@@ -43,8 +52,15 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
   const handleResetSlot = (slotId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     sound.playTick();
+    const wasActive = playerState?.activeSlotId === slotId;
     const updated = resetCustomDeckSlot(slotId);
     setCustomSlots(updated);
+    if (wasActive) {
+      onSelectDeck(
+        DEFAULT_DECK_IDS,
+        DECK_PRESETS[0]?.name || 'Tríade Elemental: Fogo, Raiz & Trovão'
+      );
+    }
   };
 
   const getPresetIcon = (index: number) => {
@@ -89,6 +105,8 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
     }
   };
 
+  const filledCustomCount = customSlots.filter((s) => isCustomDeckSlotFilled(s)).length;
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
@@ -109,14 +127,14 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                 Seleção de Baralho para a Batalha
               </h2>
               <p className="text-xs text-stone-400">
-                {DECK_PRESETS.length} Baralhos Padrões de Alta Sinergia + 3 Espaços Personalizados Salvos
+                {DECK_PRESETS.length} Baralhos Padrões de Alta Sinergia + 3 Espaços Exclusivos da Conta
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 transition-colors"
+            className="p-2 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 transition-colors cursor-pointer"
             title="Fechar"
           >
             <X size={18} />
@@ -130,7 +148,7 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
               sound.playDraw();
               setActiveTab('presets');
             }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-t border-x ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-t border-x cursor-pointer ${
               activeTab === 'presets'
                 ? 'bg-stone-950 border-amber-500/50 text-amber-300 border-b-transparent shadow-sm'
                 : 'border-transparent text-stone-400 hover:text-stone-200 hover:bg-stone-800/40'
@@ -144,13 +162,13 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
               sound.playDraw();
               setActiveTab('custom');
             }}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-t border-x ${
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-xs font-bold transition-all border-t border-x cursor-pointer ${
               activeTab === 'custom'
                 ? 'bg-stone-950 border-amber-500/50 text-amber-300 border-b-transparent shadow-sm'
                 : 'border-transparent text-stone-400 hover:text-stone-200 hover:bg-stone-800/40'
             }`}
           >
-            <Edit3 size={15} /> Meus Espaços Salvos (3)
+            <Edit3 size={15} /> Meus Espaços ({filledCustomCount}/3)
           </button>
         </div>
 
@@ -178,6 +196,7 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                     key={`preset_${idx}`}
                     onClick={() => {
                       sound.playDraw();
+                      deactivateCustomDeckSlots();
                       onSelectDeck(preset.cardIds, preset.name);
                     }}
                     className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4 ${
@@ -197,6 +216,11 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getPresetBadgeColor(idx)}`}>
                           {preset.subtitle}
                         </span>
+                        {idx === 0 && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase tracking-wider">
+                            Inicial Padrão
+                          </span>
+                        )}
                         {isSelected && (
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-black uppercase tracking-wider">
                             Baralho Ativo
@@ -226,11 +250,13 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                         </div>
                       ) : (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             sound.playDraw();
+                            deactivateCustomDeckSlots();
                             onSelectDeck(preset.cardIds, preset.name);
                           }}
-                          className="px-4 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-500 text-amber-300 hover:text-black border border-amber-500/40 text-xs font-bold transition-all shadow-sm"
+                          className="px-4 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-500 text-amber-300 hover:text-black border border-amber-500/40 text-xs font-bold transition-all shadow-sm cursor-pointer"
                         >
                           Selecionar
                         </button>
@@ -248,13 +274,14 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                 <div className="flex items-center gap-2.5">
                   <Edit3 size={16} className="text-cyan-400 shrink-0" />
                   <span>
-                    Você possui <strong>3 espaços permanentes salvos</strong> para montar qualquer combinação de 20 cartas livremente.
+                    Seus <strong>3 espaços personalizados</strong> são exclusivos desta conta e salvos na nuvem. Novos espaços começam vazios até você montar e salvar um baralho de 20 cartas.
                   </span>
                 </div>
               </div>
 
               {customSlots.map((slot) => {
-                const isSelected = isCurrentActive(slot.cardIds);
+                const isFilled = isCustomDeckSlotFilled(slot);
+                const isSelected = isFilled && isCurrentActive(slot.cardIds);
                 const templates = slot.cardIds
                   .map((id) => CARD_TEMPLATES.find((t) => t.id === id))
                   .filter(Boolean);
@@ -267,7 +294,9 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                     className={`p-4 rounded-xl border-2 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
                       isSelected
                         ? 'border-amber-400 bg-amber-950/30 shadow-lg shadow-amber-500/15'
-                        : 'border-stone-800 bg-stone-900/60 hover:border-amber-500/40'
+                        : isFilled
+                        ? 'border-stone-800 bg-stone-900/60 hover:border-amber-500/40'
+                        : 'border-dashed border-stone-800 bg-stone-900/30'
                     }`}
                   >
                     <div className="flex-1">
@@ -275,8 +304,8 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                         <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                           Espaço {slot.slotId}
                         </span>
-                        <h3 className="text-sm font-bold text-white">
-                          {slot.name}
+                        <h3 className={`text-sm font-bold ${isFilled ? 'text-white' : 'text-stone-400 italic'}`}>
+                          {isFilled ? slot.name : `Espaço Vazio ${slot.slotId}`}
                         </h3>
                         {isSelected && (
                           <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-black uppercase tracking-wider">
@@ -285,55 +314,74 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3 mt-2 text-[11px] text-stone-400 font-mono">
-                        <span className="text-amber-300 font-semibold">{slot.cardIds.length} / 20 Cartas</span>
-                        <span>·</span>
-                        <span>{unitsCount} Unidades</span>
-                        <span>·</span>
-                        <span>{spellsCount} Feitiços</span>
-                        <span>·</span>
-                        <span className="text-stone-500">Salvo no Navegador</span>
-                      </div>
+                      {isFilled ? (
+                        <div className="flex items-center gap-3 mt-2 text-[11px] text-stone-400 font-mono">
+                          <span className="text-amber-300 font-semibold">20 / 20 Cartas</span>
+                          <span>·</span>
+                          <span>{unitsCount} Unidades</span>
+                          <span>·</span>
+                          <span>{spellsCount} Feitiços</span>
+                          <span>·</span>
+                          <span className="text-emerald-400/80">Salvo na Conta</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-2 text-[11px] text-stone-500 font-mono">
+                          <span>0 / 20 Cartas</span>
+                          <span>·</span>
+                          <span>Nenhum baralho salvo neste espaço</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="shrink-0 flex items-center gap-2 self-end md:self-center">
-                      <button
-                        onClick={(e) => handleResetSlot(slot.slotId, e)}
-                        title="Restaurar padrão deste espaço"
-                        className="p-2 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors border border-stone-700"
-                      >
-                        <RotateCcw size={15} />
-                      </button>
+                      {isFilled && (
+                        <button
+                          onClick={(e) => handleResetSlot(slot.slotId, e)}
+                          title="Esvaziar este espaço de baralho"
+                          className="p-2 rounded-lg bg-stone-800 hover:bg-rose-950 text-stone-400 hover:text-rose-300 transition-colors border border-stone-700 hover:border-rose-500/40 cursor-pointer"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
 
                       {!hideBuilderActions && (
                         <button
                           onClick={() => {
-                            setActiveSlotId(slot.slotId);
+                            sound.playDraw();
                             onClose();
                             onOpenDeckBuilder(slot.slotId);
                           }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer"
                         >
-                          <Edit3 size={14} /> Editar
+                          {isFilled ? (
+                            <>
+                              <Edit3 size={14} /> Editar
+                            </>
+                          ) : (
+                            <>
+                              <Plus size={14} /> Criar Baralho
+                            </>
+                          )}
                         </button>
                       )}
 
-                      {isSelected ? (
-                        <div className="w-8 h-8 rounded-full bg-amber-500 text-black flex items-center justify-center font-bold shadow-md">
-                          <Check size={18} />
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            sound.playDraw();
-                            setActiveSlotId(slot.slotId);
-                            onSelectDeck(slot.cardIds, slot.name);
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-500 text-amber-300 hover:text-black border border-amber-500/40 text-xs font-bold transition-all"
-                        >
-                          Selecionar
-                        </button>
-                      )}
+                      {isFilled &&
+                        (isSelected ? (
+                          <div className="w-8 h-8 rounded-full bg-amber-500 text-black flex items-center justify-center font-bold shadow-md">
+                            <Check size={18} />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              sound.playDraw();
+                              setActiveSlotId(slot.slotId);
+                              onSelectDeck(slot.cardIds, slot.name);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-amber-600/30 hover:bg-amber-500 text-amber-300 hover:text-black border border-amber-500/40 text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Selecionar
+                          </button>
+                        ))}
                     </div>
                   </div>
                 );
@@ -348,7 +396,7 @@ export const DeckSelectorModal: React.FC<DeckSelectorModalProps> = ({
             <button
               onClick={() => {
                 onClose();
-                onOpenDeckBuilder(getActiveSlotId());
+                onOpenDeckBuilder(getActiveSlotId() || 1);
               }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer"
             >

@@ -176,6 +176,16 @@ export const PatchNotesPanel: React.FC<PatchNotesPanelProps> = ({
     return effectiveReleases.filter((r) => r.id !== currentRelease.id);
   }, [effectiveReleases, currentRelease.id]);
 
+  const suggestedVersion = DEFAULT_INITIAL_PATCH_DRAFT.version.trim();
+  const hasUnpublishedSuggestedRelease = useMemo<boolean>(() => {
+    if (!adminAuthorized) return false;
+    const targetLower = suggestedVersion.toLowerCase();
+    return !publishedReleases.some((r) => r.version.trim().toLowerCase() === targetLower);
+  }, [adminAuthorized, publishedReleases, suggestedVersion]);
+
+  const isDraftMatchingSuggested =
+    draft.version.trim().toLowerCase() === suggestedVersion.toLowerCase();
+
   useEffect(() => {
     if (currentRelease?.version) {
       onActiveVersionChange?.(currentRelease.version);
@@ -244,9 +254,10 @@ export const PatchNotesPanel: React.FC<PatchNotesPanelProps> = ({
     );
     setDraftDirty(true);
     setConfirmPublish(false);
+    setAdminView('draft');
     setStatusBanner({
       type: 'info',
-      message: 'Esboço com as mudanças recentes carregado. Revise, edite à vontade e salve ou publique quando desejar.',
+      message: `Rascunho da ${suggestedVersion} carregado para sua revisão. Edite como preferir e clique em Publicar para Todos quando aprovar.`,
     });
   };
 
@@ -499,19 +510,21 @@ export const PatchNotesPanel: React.FC<PatchNotesPanelProps> = ({
             </div>
           ) : (
             <>
-              {/* Admin Quick Hint if only local fallback exists */}
-              {adminAuthorized && currentRelease.isLocalFallback && (
+              {/* Admin Pending Approval Hint whenever suggested version (v1.5.0) is not yet published */}
+              {adminAuthorized && hasUnpublishedSuggestedRelease && (
                 <div className="p-3 rounded-xl bg-amber-950/45 border border-amber-400/45 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[11px] text-amber-100">
-                    <strong className="text-amber-300">Esboço da v1.4.0 pronto!</strong>{' '}
-                    Nenhuma nota foi publicada no banco ainda. Revise o rascunho privado e publique quando quiser liberar para todos os jogadores.
+                    <strong className="text-amber-300">
+                      Rascunho {suggestedVersion} aguardando sua aprovação!
+                    </strong>{' '}
+                    Todas as mudanças recentes foram documentadas no rascunho privado. Revise os itens e publique apenas quando aprovar.
                   </div>
                   <button
                     type="button"
-                    onClick={() => setAdminView('draft')}
+                    onClick={handleLoadSuggestedDraft}
                     className="min-h-[36px] px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[11px] uppercase tracking-wider cursor-pointer shrink-0"
                   >
-                    Abrir Rascunho
+                    Revisar {suggestedVersion}
                   </button>
                 </div>
               )}
@@ -741,13 +754,28 @@ export const PatchNotesPanel: React.FC<PatchNotesPanelProps> = ({
                 type="button"
                 onClick={handleLoadSuggestedDraft}
                 className="min-h-[34px] px-2.5 py-1 rounded-lg bg-stone-950 hover:bg-stone-800 border border-stone-700 text-stone-300 hover:text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer"
-                title="Carregar o esboço preparado com as mudanças recentes"
+                title={`Carregar o esboço preparado para a versão ${suggestedVersion}`}
               >
                 <RotateCcw size={12} />
-                <span>Carregar Esboço</span>
+                <span>Carregar Esboço {suggestedVersion}</span>
               </button>
             )}
           </div>
+
+          {!editingReleaseId && hasUnpublishedSuggestedRelease && !isDraftMatchingSuggested && (
+            <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-400/45 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] text-amber-100">
+                O rascunho salvo está na versão <strong className="font-mono text-amber-300">{draft.version}</strong>. Há um novo esboço pronto da <strong className="font-mono text-amber-300">{suggestedVersion}</strong> aguardando sua aprovação.
+              </span>
+              <button
+                type="button"
+                onClick={handleLoadSuggestedDraft}
+                className="min-h-[32px] px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[11px] cursor-pointer shrink-0"
+              >
+                Carregar {suggestedVersion}
+              </button>
+            </div>
+          )}
 
           {/* Core Metadata Inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

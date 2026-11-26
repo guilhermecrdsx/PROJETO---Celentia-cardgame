@@ -3,25 +3,30 @@ import { getInMemoryPlayerState } from '../services/accountApi';
 export {
   RANK_TIER_ORDER,
   RANK_TIER_THEMES,
+  UNRANKED_THEME,
   DIVISIONS_PER_TIER,
   POINTS_PER_DIVISION,
   POINTS_PER_TIER,
   MAX_DIVISION_INDEX,
+  CELESTIAL_MIN_POINTS,
   normalizeRankTierInput,
   getTierIndex,
   divisionIndexToTierAndDivision,
   getEffectiveBlockedFromTier,
   getMaxAllowedDivisionIndex,
   getRankInfo,
+  calculateRankedRpDelta,
   calculateRankDelta,
 } from './rankMath';
 
 export type {
   RankTier,
+  RankDisplayTier,
   RankDivision,
   RankPolicyConfig,
   RankLockContext,
   RankInfo,
+  RankedRpCalculationResult,
 } from './rankMath';
 
 const RANK_STORAGE_KEY = 'celentia_ranked_points_v1';

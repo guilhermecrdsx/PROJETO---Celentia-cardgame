@@ -97,13 +97,23 @@ export const GameModeSelectModal: React.FC<GameModeSelectModalProps> = ({
     globalBlockedFromTier: rankPolicy.blockedFromTier,
     playerBlockedTotal: playerState?.rankBlockedTotal,
     playerBlockedFromTier: playerState?.rankBlockFromTier,
+    hasPlayedRanked: (playerState?.rankedMatchesPlayed ?? 0) > 0,
   });
+
+  const hasCompletedTutorial = Boolean(playerState?.tutorialRewardClaimed);
+  const currentAccountLevel = playerState?.level ?? 1;
+  const hasReachedLevel2 = currentAccountLevel >= 2;
+  const isPvpUnlocked =
+    Boolean(playerState?.isAdmin) || (hasCompletedTutorial && hasReachedLevel2);
 
   const isPvpNormalOn = queues.pvp_normal.enabled;
   const isPvpRankedOn = queues.pvp_ranked.enabled;
   const isPviaOn = queues.pvia.enabled;
   const isTestingOn = queues.testing_arena.enabled;
   const isTutorialOn = queues.tutorial.enabled;
+
+  const canEnterPvpNormal = isPvpNormalOn && isPvpUnlocked;
+  const canEnterPvpRanked = isPvpRankedOn && isPvpUnlocked;
 
   return (
     <div
@@ -243,21 +253,23 @@ export const GameModeSelectModal: React.FC<GameModeSelectModalProps> = ({
           {/* PORTAL 1: PvP NORMAL (ONLINE REDE LOCAL) */}
           <button
             type="button"
-            disabled={!isPvpNormalOn}
+            disabled={!canEnterPvpNormal}
             onClick={() => {
-              if (!isPvpNormalOn) return;
+              if (!canEnterPvpNormal) return;
               sound.playSummon();
               onOpenOnlineLobby('normal');
             }}
             className={`group relative flex flex-col justify-between rounded-2xl border-[1.5px] bg-gradient-to-b from-[#0f1a38]/95 via-[#090e20]/95 to-[#060812]/98 shadow-[0_14px_40px_rgba(0,0,0,0.85)] transition-all duration-300 text-left overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
-              isPvpNormalOn
+              canEnterPvpNormal
                 ? 'border-sky-400/60 hover:border-amber-300 hover:shadow-[0_18px_50px_rgba(56,189,248,0.34),0_0_30px_rgba(251,191,36,0.22)] hover:-translate-y-1.5 cursor-pointer'
-                : 'border-rose-500/60 opacity-75 grayscale-[45%] cursor-not-allowed'
+                : !isPvpNormalOn
+                ? 'border-rose-500/60 opacity-75 grayscale-[45%] cursor-not-allowed'
+                : 'border-amber-500/50 opacity-90 cursor-not-allowed'
             } ${
               isCompactLandscape ? 'p-2.5' : 'p-4 sm:p-5'
             }`}
           >
-            {!isPvpNormalOn && (
+            {!isPvpNormalOn ? (
               <div className="absolute inset-0 z-30 bg-stone-950/82 backdrop-blur-[2.5px] flex flex-col items-center justify-center p-4 text-center gap-2">
                 <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-md bg-rose-600 border border-rose-300/90 text-[10px] font-mono font-black uppercase tracking-widest text-white shadow-[0_0_16px_rgba(244,63,94,0.75)] flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-white" />
@@ -273,7 +285,37 @@ export const GameModeSelectModal: React.FC<GameModeSelectModalProps> = ({
                   {queues.pvp_normal.reason || 'Salas PvP Normal temporariamente desativadas pelo administrador.'}
                 </p>
               </div>
-            )}
+            ) : !isPvpUnlocked ? (
+              <div className="absolute inset-0 z-30 bg-[#050814]/88 backdrop-blur-[3px] flex flex-col items-center justify-center p-4 text-center gap-2.5">
+                <div className="w-11 h-11 rounded-2xl bg-amber-950/90 border border-amber-400/75 flex items-center justify-center text-amber-200 shadow-[0_0_22px_rgba(245,158,11,0.35)]">
+                  <Lock size={20} />
+                </div>
+                <span className="px-3 py-1 rounded-md bg-amber-500/20 border border-amber-400/70 text-[10px] sm:text-[11px] font-mono font-black uppercase tracking-[0.14em] text-amber-200">
+                  BLOQUEADO · REQUISITOS
+                </span>
+                <div className="w-full max-w-[235px] space-y-1.5 text-left bg-stone-950/85 border border-white/10 rounded-xl p-2.5 text-[11px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={hasCompletedTutorial ? 'text-emerald-300' : 'text-stone-200'}>
+                      1. Concluir o Tutorial
+                    </span>
+                    <span className={`font-mono font-bold text-[10px] ${hasCompletedTutorial ? 'text-emerald-400' : 'text-amber-300'}`}>
+                      {hasCompletedTutorial ? '✓ OK' : 'Pendente'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={hasReachedLevel2 ? 'text-emerald-300' : 'text-stone-200'}>
+                      2. Nível 2 no PvIA
+                    </span>
+                    <span className={`font-mono font-bold text-[10px] tabular-nums ${hasReachedLevel2 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                      {hasReachedLevel2 ? '✓ OK' : `Nv. ${currentAccountLevel}/2`}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-stone-400 max-w-[230px] leading-snug">
+                  No Nível 1, cada partida PvIA garante +50 XP para subir de nível rapidamente.
+                </p>
+              </div>
+            ) : null}
             {/* Card Art Atmospheric Backdrop */}
             <ModeBackdropArt
               templateId="g_kaliel"
@@ -376,21 +418,23 @@ export const GameModeSelectModal: React.FC<GameModeSelectModalProps> = ({
           {/* PORTAL 2: PvP RANQUEADO (SOVEREIGN GOLDEN HERO PORTAL) */}
           <button
             type="button"
-            disabled={!isPvpRankedOn}
+            disabled={!canEnterPvpRanked}
             onClick={() => {
-              if (!isPvpRankedOn) return;
+              if (!canEnterPvpRanked) return;
               sound.playSummon();
               onOpenOnlineLobby('ranked');
             }}
             className={`group relative flex flex-col justify-between rounded-2xl border-2 bg-gradient-to-b from-[#2b1a09]/95 via-[#130d16]/95 to-[#08060c]/98 transition-all duration-300 text-left overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
-              isPvpRankedOn
+              canEnterPvpRanked
                 ? 'border-amber-400/85 hover:border-amber-200 shadow-[0_16px_50px_rgba(245,158,11,0.28),0_0_30px_rgba(0,0,0,0.9)] hover:shadow-[0_22px_65px_rgba(251,191,36,0.52)] hover:-translate-y-2 cursor-pointer'
-                : 'border-rose-500/70 opacity-75 grayscale-[45%] cursor-not-allowed'
+                : !isPvpRankedOn
+                ? 'border-rose-500/70 opacity-75 grayscale-[45%] cursor-not-allowed'
+                : 'border-amber-500/50 opacity-90 cursor-not-allowed'
             } ${
               isCompactLandscape ? 'p-2.5' : 'p-4 sm:p-5'
             }`}
           >
-            {!isPvpRankedOn && (
+            {!isPvpRankedOn ? (
               <div className="absolute inset-0 z-30 bg-stone-950/84 backdrop-blur-[2.5px] flex flex-col items-center justify-center p-4 text-center gap-2">
                 <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-md bg-rose-600 border border-rose-300/90 text-[10px] font-mono font-black uppercase tracking-widest text-white shadow-[0_0_16px_rgba(244,63,94,0.75)] flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-white" />
@@ -406,7 +450,37 @@ export const GameModeSelectModal: React.FC<GameModeSelectModalProps> = ({
                   {queues.pvp_ranked.reason || 'Fila Ranqueada temporariamente fechada pelo administrador.'}
                 </p>
               </div>
-            )}
+            ) : !isPvpUnlocked ? (
+              <div className="absolute inset-0 z-30 bg-[#0b070c]/88 backdrop-blur-[3px] flex flex-col items-center justify-center p-4 text-center gap-2.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-950/90 border border-amber-400/75 flex items-center justify-center text-amber-200 shadow-[0_0_22px_rgba(245,158,11,0.35)]">
+                  <Lock size={22} />
+                </div>
+                <span className="px-3 py-1 rounded-md bg-amber-500/20 border border-amber-400/70 text-[10px] sm:text-[11px] font-mono font-black uppercase tracking-[0.14em] text-amber-200">
+                  BLOQUEADO · REQUISITOS
+                </span>
+                <div className="w-full max-w-[240px] space-y-1.5 text-left bg-stone-950/85 border border-white/10 rounded-xl p-2.5 text-[11px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={hasCompletedTutorial ? 'text-emerald-300' : 'text-stone-200'}>
+                      1. Concluir o Tutorial
+                    </span>
+                    <span className={`font-mono font-bold text-[10px] ${hasCompletedTutorial ? 'text-emerald-400' : 'text-amber-300'}`}>
+                      {hasCompletedTutorial ? '✓ OK' : 'Pendente'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={hasReachedLevel2 ? 'text-emerald-300' : 'text-stone-200'}>
+                      2. Nível 2 no PvIA
+                    </span>
+                    <span className={`font-mono font-bold text-[10px] tabular-nums ${hasReachedLevel2 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                      {hasReachedLevel2 ? '✓ OK' : `Nv. ${currentAccountLevel}/2`}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-stone-400 max-w-[235px] leading-snug">
+                  Apenas partidas PvP Ranqueadas concedem Pontos de Rank (RP).
+                </p>
+              </div>
+            ) : null}
             {/* Card Art Atmospheric Backdrop (O Sol) */}
             <ModeBackdropArt
               templateId="n_o_sol"
@@ -599,7 +673,9 @@ export const GameModeSelectModal: React.FC<GameModeSelectModalProps> = ({
                     Modo PvIA
                   </h3>
                   <p className={`${isCompactLandscape ? 'text-[10px]' : 'text-xs mt-1'} text-stone-300/90 leading-snug`}>
-                    Enfrente a IA com baralhos variados a cada partida.
+                    {currentAccountLevel === 1
+                      ? 'Nível 1: ganhe +50 XP por partida para liberar o PvP! (Sem pontos de rank)'
+                      : 'Enfrente a IA com baralhos variados (+10 XP/partida · Sem pontos de rank).'}
                   </p>
                 </div>
 

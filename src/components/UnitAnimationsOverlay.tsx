@@ -74,7 +74,13 @@ export type UnitVfxType =
   | 'corte_das_fadas_miracle'
   | 'gangnyr_bleed_slash'
   | 'gangnyr_hemorrhage_burst'
-  | 'hamelia_putrid_corrosion';
+  | 'hamelia_putrid_corrosion'
+  | 'celia_frost_bonus'
+  | 'celia_ice_barrier'
+  | 'vilma_fire_bonus'
+  | 'vilma_fire_barrier'
+  | 'mago_uhr_draw_arcana'
+  | 'gough_arrow_forge';
 
 export interface UnitVfxEvent {
   id: string;
@@ -90,7 +96,7 @@ export interface UnitVfxEvent {
 }
 
 export const UNIT_VFX_DURATIONS: Record<UnitVfxType, number> = {
-  fernando_ember: 850,
+  fernando_ember: 1000,
   vilma_fire_wave: 900,
   virtus_impetus: 880,
   salazar_torpor: 850,
@@ -100,11 +106,11 @@ export const UNIT_VFX_DURATIONS: Record<UnitVfxType, number> = {
   o_sol_heal_helio: 900,
   o_sol_lvl2_oblit_disintegrate: 1900,
   o_sol_lvl2_drain: 900,
-  fanx_aqua_blessing: 950,
+  fanx_aqua_blessing: 1080,
   cristalys_aqua_heal: 880,
   vanusa_reveal: 900,
   krust_crypt_reopen: 950,
-  glauco_snowflake_def: 850,
+  glauco_snowflake_def: 1000,
   kore_death_blast: 950,
   juci_dragon_breath: 950,
   bonetrus_frost_fog: 950,
@@ -112,7 +118,7 @@ export const UNIT_VFX_DURATIONS: Record<UnitVfxType, number> = {
   bonetrus_lamina_attach: 1950,
   finn_hp_boost: 900,
   kyn_bonk: 820,
-  mara_potion_power: 850,
+  mara_potion_power: 1000,
   tyn_lightning_dodge: 820,
   atormentador_fusion: 2000,
   atormentador_stun_bolt: 880,
@@ -138,7 +144,7 @@ export const UNIT_VFX_DURATIONS: Record<UnitVfxType, number> = {
   saniel_lvl2_drain: 1050,
   ambroz_alvorada_crit: 900,
   bia_furto_feerico: 980,
-  nulio_luz_revigorante: 940,
+  nulio_luz_revigorante: 1040,
   lucent_purificacao_ardente: 980,
   mavie_ceifa_luminosa: 960,
   falanx_onda_luz: 1020,
@@ -162,6 +168,12 @@ export const UNIT_VFX_DURATIONS: Record<UnitVfxType, number> = {
   gangnyr_bleed_slash: 1250,
   gangnyr_hemorrhage_burst: 1550,
   hamelia_putrid_corrosion: 1450,
+  celia_frost_bonus: 960,
+  celia_ice_barrier: 880,
+  vilma_fire_bonus: 960,
+  vilma_fire_barrier: 880,
+  mago_uhr_draw_arcana: 920,
+  gough_arrow_forge: 820,
 };
 
 interface Point {
@@ -695,64 +707,478 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
       ctx.clearRect(0, 0, vw, vh);
 
       try {
-      switch (vfx.type) {
-        // 1. FERNANDO: Pequena brasa viaja até o Poder do alvo
-        case 'fernando_ember': {
-          const travel = Math.min(1, p / 0.65);
-          const ease = 1 - Math.pow(1 - travel, 2.2);
-          const tx = primaryTarget.x - (primaryTarget.w ? primaryTarget.w * 0.25 : 22);
-          const ty = primaryTarget.y + (primaryTarget.h ? primaryTarget.h * 0.34 : 38);
-          const ex = src.x + (tx - src.x) * ease;
-          const ey = src.y + (ty - src.y) * ease - Math.sin(travel * Math.PI) * 54;
+      // Helper: Pequena Orbe Elemental com trajetória curva fluida, captura espiralada e fusão suave na unidade alvo
+      const drawElementalIntegrationOrb = (opts: {
+        coreColor: string;
+        midColor: string;
+        outerColor: string;
+        glowColor: string;
+        elementKind: 'fire' | 'ice' | 'electric' | 'divine';
+        badgeText: string;
+        badgeBorder: string;
+        badgeTextCol: string;
+      }) => {
+        const tx = primaryTarget.x;
+        const ty = primaryTarget.y;
+        const cw = primaryTarget.w || 96;
+        const ch = primaryTarget.h || 134;
+        const selfCast = Math.hypot(src.x - tx, src.y - ty) < 22;
 
+        // Curva orgânica S-Bézier com aproximação em espiral suave até o coração da carta
+        const dx = tx - src.x;
+        const dy = ty - src.y;
+        const dist = Math.max(1, Math.hypot(dx, dy));
+        const perpX = -dy / dist;
+        const perpY = dx / dist;
+        const curveSign = src.x <= tx ? 1 : -1;
+        const ctrl1X = src.x + dx * 0.28 + perpX * 48 * curveSign;
+        const ctrl1Y = src.y + dy * 0.28 + perpY * 48 * curveSign - 34;
+        const ctrl2X = src.x + dx * 0.76 - perpX * 26 * curveSign;
+        const ctrl2Y = src.y + dy * 0.76 - perpY * 26 * curveSign - 24;
+
+        const sampleOrbPos = (prog: number): { x: number; y: number } => {
+          if (selfCast) {
+            const orbitT = Math.min(1, prog / 0.68);
+            const easeOrb = 1 - Math.pow(1 - orbitT, 2.35);
+            const rad = 46 * (1 - easeOrb);
+            const ang = -Math.PI * 0.55 + easeOrb * Math.PI * 2.85;
+            return {
+              x: tx + Math.cos(ang) * rad,
+              y: ty + Math.sin(ang) * rad * 0.82,
+            };
+          }
+          const flightEnd = 0.54;
+          const spiralEnd = 0.70;
+          if (prog <= flightEnd) {
+            const u = Math.max(0, Math.min(1, prog / flightEnd));
+            // Smoothstep cúbico para aceleração e desaceleração orgânicas
+            const t = u * u * (3 - 2 * u);
+            const mt = 1 - t;
+            // Aproxima-se da borda orbital (raio 24px) antes de espiralar para o centro
+            const entryX = tx + Math.cos(-Math.PI * 0.35) * 24;
+            const entryY = ty + Math.sin(-Math.PI * 0.35) * 20;
+            const x =
+              mt * mt * mt * src.x +
+              3 * mt * mt * t * ctrl1X +
+              3 * mt * t * t * ctrl2X +
+              t * t * t * entryX;
+            const y =
+              mt * mt * mt * src.y +
+              3 * mt * mt * t * ctrl1Y +
+              3 * mt * t * t * ctrl2Y +
+              t * t * t * entryY;
+            return { x, y };
+          }
+          const s = Math.max(0, Math.min(1, (prog - flightEnd) / (spiralEnd - flightEnd)));
+          const sEase = 1 - Math.pow(1 - s, 2.2);
+          const rad = 24 * (1 - sEase);
+          const ang = -Math.PI * 0.35 + sEase * Math.PI * 1.95;
+          return {
+            x: tx + Math.cos(ang) * rad,
+            y: ty + Math.sin(ang) * rad * 0.84,
+          };
+        };
+
+        const spawnT = Math.min(1, p / 0.14);
+        const orbPos = sampleOrbPos(p);
+        const ox = orbPos.x;
+        const oy = orbPos.y;
+        const mergeStart = selfCast ? 0.56 : 0.60;
+        const integrateT = Math.max(0, Math.min(1, (p - mergeStart) / (1 - mergeStart)));
+
+        ctx.save();
+        ctx.globalAlpha = masterAlpha;
+
+        // Fase 1: Anel suave de condensação na carta de origem (0..0.24)
+        if (!selfCast && p < 0.28) {
+          const launchT = p / 0.28;
           ctx.save();
-          ctx.globalAlpha = masterAlpha;
-          ctx.fillStyle = '#fb923c';
-          ctx.shadowColor = '#f97316';
-          ctx.shadowBlur = 24;
+          ctx.globalAlpha = (1 - launchT) * 0.72 * masterAlpha;
+          ctx.strokeStyle = opts.coreColor;
+          ctx.lineWidth = 2.2 * (1 - launchT * 0.4);
+          ctx.shadowColor = opts.glowColor;
+          ctx.shadowBlur = 14;
           ctx.beginPath();
-          ctx.arc(ex, ey, 11 + Math.sin(sec * 25) * 2.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#fef08a';
-          ctx.beginPath();
-          ctx.arc(ex, ey, 5.5, 0, Math.PI * 2);
-          ctx.fill();
-          if (p >= 0.6) {
-            const imp = (p - 0.6) / 0.4;
-            ctx.strokeStyle = '#f97316';
-            ctx.lineWidth = 3 * (1 - imp);
+          ctx.arc(src.x, src.y, 10 + launchT * 28, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Fase 2: Fita luminosa contínua e partículas elementais acompanhando a curva da orbe
+        if (integrateT < 0.42) {
+          const trailFade = 1 - integrateT / 0.42;
+          const samples = 16;
+          ctx.save();
+          for (let s = samples; s >= 1; s--) {
+            const sampleP = Math.max(0, p - s * 0.015);
+            const prevP = Math.max(0, p - (s - 1) * 0.015);
+            const ptA = sampleOrbPos(sampleP);
+            const ptB = sampleOrbPos(prevP);
+            const ratio = 1 - s / (samples + 1);
+            ctx.strokeStyle = s % 3 === 0 ? '#ffffff' : s % 2 === 0 ? opts.coreColor : opts.midColor;
+            ctx.lineWidth = Math.max(1.2, ratio * 10.5 * spawnT);
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = trailFade * ratio * ratio * 0.72 * masterAlpha;
+            ctx.shadowColor = opts.glowColor;
+            ctx.shadowBlur = 14;
             ctx.beginPath();
-            ctx.arc(tx, ty, 12 + imp * 42, 0, Math.PI * 2);
+            ctx.moveTo(ptA.x, ptA.y);
+            ctx.lineTo(ptB.x, ptB.y);
             ctx.stroke();
           }
+
+          // Micro-faíscas orbitando a cauda durante o trajeto
+          for (let m = 0; m < 7; m++) {
+            const mP = Math.max(0, p - 0.02 - m * 0.025);
+            const mPt = sampleOrbPos(mP);
+            const mAng = sec * 9 + m * 1.4;
+            const mRad = 6 + (m % 3) * 4.5;
+            ctx.fillStyle = m % 2 === 0 ? '#ffffff' : opts.coreColor;
+            ctx.globalAlpha = trailFade * (1 - m / 8) * 0.85 * masterAlpha;
+            ctx.beginPath();
+            ctx.arc(
+              mPt.x + Math.cos(mAng) * mRad,
+              mPt.y + Math.sin(mAng) * mRad,
+              Math.max(1.2, 2.8 - m * 0.25),
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+          }
           ctx.restore();
-          drawBadge(tx, ty - 34, vfx.label || '🔥 +4 PODER (BRASA)', '#f97316', '#ffedd5', masterAlpha);
+        }
+
+        // Pequena Orbe Elemental translúcida e fluida (contrai suavemente ao fundir-se no centro da carta)
+        if (integrateT < 0.45) {
+          const shrinkEase = integrateT <= 0 ? 1 : Math.pow(1 - integrateT / 0.45, 1.55);
+          const orbScale = Math.min(1, spawnT * 1.15) * shrinkEase;
+          const breathe = 1 + Math.sin(sec * 20) * 0.08;
+          const rOuter = 14.5 * orbScale * breathe;
+
+          ctx.save();
+          ctx.globalAlpha = masterAlpha * Math.min(1, orbScale * 1.15);
+
+          // Halo volumétrico macio
+          const orbGrad = ctx.createRadialGradient(ox, oy, 1, ox, oy, Math.max(2, rOuter * 2.15));
+          orbGrad.addColorStop(0, '#ffffff');
+          orbGrad.addColorStop(0.24, opts.coreColor);
+          orbGrad.addColorStop(0.56, opts.midColor);
+          orbGrad.addColorStop(0.84, opts.outerColor);
+          orbGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = orbGrad;
+          ctx.shadowColor = opts.glowColor;
+          ctx.shadowBlur = 24;
+          ctx.beginPath();
+          ctx.arc(ox, oy, Math.max(2, rOuter * 2.15), 0, Math.PI * 2);
+          ctx.fill();
+
+          // Núcleo cristalino brilhante
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(ox, oy, Math.max(1.5, 5.4 * orbScale), 0, Math.PI * 2);
+          ctx.fill();
+
+          // Assinatura elemental exclusiva da orbe
+          if (opts.elementKind === 'fire') {
+            // Línguas de chama sinuosas envolvendo a orbe ígnea de Fernando
+            for (let f = 0; f < 3; f++) {
+              const fa = sec * 8 + (f * Math.PI * 2) / 3;
+              const fx = ox + Math.cos(fa) * 10 * orbScale;
+              const fy = oy + Math.sin(fa) * 10 * orbScale;
+              ctx.strokeStyle = f === 0 ? '#fef08a' : '#fb923c';
+              ctx.lineWidth = 2.2 * orbScale;
+              ctx.beginPath();
+              ctx.arc(ox, oy, (11 + f * 3) * orbScale, fa, fa + Math.PI * 0.72);
+              ctx.stroke();
+              ctx.fillStyle = '#fde047';
+              ctx.beginPath();
+              ctx.arc(fx, fy, 2.4 * orbScale, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          } else if (opts.elementKind === 'ice') {
+            // Duplo floco hexagonal cristalino rotativo da orbe gélida de Glauco
+            ctx.save();
+            ctx.translate(ox, oy);
+            ctx.rotate(sec * 4.5);
+            ctx.strokeStyle = '#e0f2fe';
+            ctx.lineWidth = 1.65;
+            for (let b = 0; b < 6; b++) {
+              const a = (b * Math.PI) / 3;
+              const len = 15.5 * orbScale;
+              ctx.beginPath();
+              ctx.moveTo(0, 0);
+              ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+              ctx.stroke();
+              // Ramos do cristal
+              const bx = Math.cos(a) * len * 0.58;
+              const by = Math.sin(a) * len * 0.58;
+              ctx.beginPath();
+              ctx.moveTo(bx, by);
+              ctx.lineTo(bx + Math.cos(a + 0.6) * 4.8 * orbScale, by + Math.sin(a + 0.6) * 4.8 * orbScale);
+              ctx.moveTo(bx, by);
+              ctx.lineTo(bx + Math.cos(a - 0.6) * 4.8 * orbScale, by + Math.sin(a - 0.6) * 4.8 * orbScale);
+              ctx.stroke();
+            }
+            ctx.restore();
+          } else if (opts.elementKind === 'electric') {
+            // Micro-arcos voltaicos orbitais da orbe elétrica de Mara
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.arc(ox, oy, 14.5 * orbScale, 0, Math.PI * 2);
+            ctx.stroke();
+            for (let k = 0; k < 4; k++) {
+              const a1 = (k / 4) * Math.PI * 2 + sec * 13;
+              const a2 = a1 + 0.9;
+              const rx1 = ox + Math.cos(a1) * 16.5 * orbScale;
+              const ry1 = oy + Math.sin(a1) * 16.5 * orbScale;
+              const rx2 = ox + Math.cos(a2) * 18.5 * orbScale;
+              const ry2 = oy + Math.sin(a2) * 18.5 * orbScale;
+              drawBolt(ox, oy, rx1, ry1, '#fef08a', 1.7, masterAlpha * orbScale, sec + k);
+              drawBolt(rx1, ry1, rx2, ry2, '#c084fc', 1.2, masterAlpha * orbScale * 0.85, sec + k + 5);
+            }
+          } else if (opts.elementKind === 'divine') {
+            // Micro-halo celestial e estrela de 4 pontas da orbe divina de Nulio
+            ctx.save();
+            ctx.translate(ox, oy);
+            ctx.rotate(sec * 3.2);
+            ctx.strokeStyle = '#fef9c3';
+            ctx.lineWidth = 1.7;
+            ctx.beginPath();
+            ctx.arc(0, 0, 14.5 * orbScale, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = '#a7f3d0';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 19 * orbScale, sec, sec + Math.PI * 1.2);
+            ctx.stroke();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(-19 * orbScale, 0);
+            ctx.lineTo(19 * orbScale, 0);
+            ctx.moveTo(0, -19 * orbScale);
+            ctx.lineTo(0, 19 * orbScale);
+            ctx.stroke();
+            ctx.restore();
+          }
+          ctx.restore();
+        }
+
+        // Fase 3: Fusão & Integração Suave dentro da carta escolhida
+        if (integrateT > 0) {
+          const easeOut = 1 - Math.pow(1 - integrateT, 2.8);
+          const bellAlpha = Math.sin(integrateT * Math.PI);
+          const impFade = 1 - integrateT;
+
+          // 3A. Brilho interno suave irradiando do coração da unidade + varredura especular líquida sobre a carta
+          ctx.save();
+          ctx.beginPath();
+          ctx.roundRect(tx - cw / 2 - 2, ty - ch / 2 - 2, cw + 4, ch + 4, 11);
+          ctx.clip();
+
+          // Núcleo de absorção interna
+          ctx.globalAlpha = bellAlpha * 0.72 * masterAlpha;
+          const absorbGrad = ctx.createRadialGradient(tx, ty, 3, tx, ty, Math.max(cw, ch) * 0.85);
+          absorbGrad.addColorStop(0, '#ffffff');
+          absorbGrad.addColorStop(0.32, opts.coreColor);
+          absorbGrad.addColorStop(0.68, opts.midColor);
+          absorbGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = absorbGrad;
+          ctx.fillRect(tx - cw / 2 - 6, ty - ch / 2 - 6, cw + 12, ch + 12);
+
+          // Varredura diagonal de luz líquida integrando o buff na superfície da carta
+          const sweepShift = -cw * 1.15 + easeOut * (cw * 2.3 + ch * 0.55);
+          ctx.globalAlpha = bellAlpha * 0.82 * masterAlpha;
+          const sheenGrad = ctx.createLinearGradient(
+            tx - cw / 2 + sweepShift - 36,
+            ty - ch / 2,
+            tx - cw / 2 + sweepShift + 36,
+            ty + ch / 2
+          );
+          sheenGrad.addColorStop(0, 'transparent');
+          sheenGrad.addColorStop(0.42, opts.coreColor);
+          sheenGrad.addColorStop(0.5, '#ffffff');
+          sheenGrad.addColorStop(0.58, opts.midColor);
+          sheenGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = sheenGrad;
+          ctx.fillRect(tx - cw / 2 - 6, ty - ch / 2 - 6, cw + 12, ch + 12);
+          ctx.restore();
+
+          // 3B. Moldura luminosa respirando em harmonia com o elemento
+          ctx.save();
+          ctx.globalAlpha = bellAlpha * 0.95 * masterAlpha;
+          ctx.strokeStyle = opts.coreColor;
+          ctx.lineWidth = 3.2;
+          ctx.shadowColor = opts.glowColor;
+          ctx.shadowBlur = 22;
+          ctx.beginPath();
+          ctx.roundRect(tx - cw / 2 - 3, ty - ch / 2 - 3, cw + 6, ch + 6, 11);
+          ctx.stroke();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.25;
+          ctx.globalAlpha = bellAlpha * 0.7 * masterAlpha;
+          ctx.beginPath();
+          ctx.roundRect(tx - cw / 2 - 1, ty - ch / 2 - 1, cw + 2, ch + 2, 10);
+          ctx.stroke();
+          ctx.restore();
+
+          // 3C. Dois anéis harmônicos concêntricos de ressonância elemental
+          for (let r = 0; r < 2; r++) {
+            const rt = Math.max(0, easeOut - r * 0.14);
+            if (rt <= 0) continue;
+            ctx.save();
+            ctx.globalAlpha = impFade * (r === 0 ? 0.9 : 0.68) * masterAlpha;
+            ctx.strokeStyle = r === 0 ? opts.coreColor : opts.outerColor;
+            ctx.lineWidth = (r === 0 ? 3.2 : 1.9) * (1 - integrateT * 0.45);
+            ctx.shadowColor = opts.glowColor;
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.arc(tx, ty, 12 + rt * (62 + r * 20), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // 3D. Emanação final temática ao redor da unidade integrada
+          ctx.save();
+          if (opts.elementKind === 'electric') {
+            for (let e = 0; e < 4; e++) {
+              const ea = (e / 4) * Math.PI * 2 + sec * 6;
+              const sx = tx + Math.cos(ea) * (cw * 0.45);
+              const sy = ty + Math.sin(ea) * (ch * 0.42);
+              const ex = tx + Math.cos(ea + 0.5) * (cw * 0.56 + easeOut * 14);
+              const ey = ty + Math.sin(ea + 0.5) * (ch * 0.5 + easeOut * 14);
+              drawBolt(sx, sy, ex, ey, e % 2 === 0 ? '#fef08a' : '#c084fc', 1.8, impFade * masterAlpha, sec + e * 3);
+            }
+          }
+          for (let i = 0; i < 16; i++) {
+            const ang = (i / 16) * Math.PI * 2 + (opts.elementKind === 'divine' ? sec * 1.2 : sec * 2.1);
+            const distP = 14 + easeOut * (46 + (i % 3) * 16);
+            const rise =
+              opts.elementKind === 'fire' || opts.elementKind === 'divine'
+                ? easeOut * 28
+                : opts.elementKind === 'ice'
+                ? -easeOut * 8
+                : 0;
+            const px = tx + Math.cos(ang) * distP;
+            const py = ty + Math.sin(ang) * distP * 0.88 - rise;
+            ctx.fillStyle = i % 3 === 0 ? '#ffffff' : i % 2 === 0 ? opts.coreColor : opts.midColor;
+            ctx.shadowColor = opts.glowColor;
+            ctx.shadowBlur = 10;
+            ctx.globalAlpha = impFade * 0.92 * masterAlpha;
+            ctx.beginPath();
+            if (opts.elementKind === 'ice' && i % 2 === 0) {
+              // Pequeno losango de cristal gélido
+              const sz = 4.2 * (1 - integrateT * 0.35);
+              ctx.moveTo(px, py - sz);
+              ctx.lineTo(px + sz * 0.72, py);
+              ctx.lineTo(px, py + sz);
+              ctx.lineTo(px - sz * 0.72, py);
+              ctx.closePath();
+            } else {
+              ctx.arc(px, py, Math.max(1.2, 3.1 * (1 - integrateT * 0.42)), 0, Math.PI * 2);
+            }
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+
+        ctx.restore();
+        drawBadge(tx, ty - 86, vfx.label || opts.badgeText, opts.badgeBorder, opts.badgeTextCol, masterAlpha);
+      };
+
+      switch (vfx.type) {
+        // 1. FERNANDO (MODERNIZADO): Pequena orbe ígnea se integrando à unidade escolhida
+        case 'fernando_ember': {
+          drawElementalIntegrationOrb({
+            coreColor: '#fef08a',
+            midColor: '#fb923c',
+            outerColor: '#ef4444',
+            glowColor: '#f97316',
+            elementKind: 'fire',
+            badgeText: '🔥 +4 PODER (ORBE ÍGNEA DE FERNANDO)',
+            badgeBorder: '#f97316',
+            badgeTextCol: '#ffedd5',
+          });
           break;
         }
 
-        // 2. VILMA: Rajada de fogo atingindo todos os inimigos
+        // 2. VILMA (MODERNIZADA): Onda de chamas ígneas e brasas varrendo todas as unidades inimigas
         case 'vilma_fire_wave': {
-          const sweepX = vw * (0.08 + Math.min(1, p / 0.72) * 0.84);
+          const sweepProg = Math.min(1, p / 0.72);
+          const easeSweep = 1 - Math.pow(1 - sweepProg, 2.2);
+          const sweepX = vw * (0.04 + easeSweep * 0.92);
           const bandY = targets.length > 0 ? targets[0].y : vh * 0.32;
+
           ctx.save();
-          ctx.globalAlpha = masterAlpha * 0.85;
-          const grad = ctx.createLinearGradient(sweepX - 180, bandY, sweepX + 40, bandY);
-          grad.addColorStop(0, 'transparent');
-          grad.addColorStop(0.5, 'rgba(249, 115, 22, 0.72)');
-          grad.addColorStop(0.85, 'rgba(254, 240, 138, 0.92)');
-          grad.addColorStop(1, 'transparent');
-          ctx.fillStyle = grad;
-          ctx.fillRect(sweepX - 180, bandY - 78, 220, 156);
-          targets.forEach((tg) => {
-            const r = 14 + p * 56;
-            ctx.strokeStyle = '#fb923c';
-            ctx.lineWidth = 3;
+          ctx.globalAlpha = masterAlpha;
+
+          // Frente de onda ígnea volumétrica em camadas
+          const waveGrad = ctx.createLinearGradient(sweepX - 240, bandY, sweepX + 55, bandY);
+          waveGrad.addColorStop(0, 'transparent');
+          waveGrad.addColorStop(0.32, 'rgba(185, 28, 28, 0.48)');
+          waveGrad.addColorStop(0.68, 'rgba(249, 115, 22, 0.85)');
+          waveGrad.addColorStop(0.9, 'rgba(254, 240, 138, 0.96)');
+          waveGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = waveGrad;
+          ctx.beginPath();
+          ctx.moveTo(sweepX - 240, bandY - 78);
+          ctx.quadraticCurveTo(sweepX + 46, bandY - 56, sweepX + 52, bandY);
+          ctx.quadraticCurveTo(sweepX + 46, bandY + 56, sweepX - 240, bandY + 78);
+          ctx.closePath();
+          ctx.fill();
+
+          // Línguas de fogo e brasas acompanhando a frente da onda
+          for (let f = 0; f < 16; f++) {
+            const fy = bandY - 68 + (f / 15) * 136;
+            const fx = sweepX - (f % 5) * 34 - Math.sin(sec * 16 + f) * 14;
+            const fr = 5 + (f % 3) * 3;
+            ctx.fillStyle = f % 3 === 0 ? '#fef08a' : f % 2 === 0 ? '#fb923c' : '#ef4444';
+            ctx.shadowColor = '#f97316';
+            ctx.shadowBlur = 16;
             ctx.beginPath();
-            ctx.arc(tg.x, tg.y, r, 0, Math.PI * 2);
+            ctx.arc(fx, fy, fr * (1 - p * 0.35), 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Impacto flamejante em cada inimigo atingido
+          targets.forEach((tg, idx) => {
+            const hitDelay = Math.min(0.45, Math.max(0, (tg.x / vw) * 0.55));
+            const localT = Math.max(0, Math.min(1, (p - hitDelay) / (1 - hitDelay)));
+            if (localT <= 0) return;
+
+            const burstGrad = ctx.createRadialGradient(tg.x, tg.y, 4, tg.x, tg.y, 58 + localT * 26);
+            burstGrad.addColorStop(0, `rgba(255, 255, 255, ${(1 - localT) * 0.9})`);
+            burstGrad.addColorStop(0.35, `rgba(251, 146, 60, ${(1 - localT * 0.65) * 0.85})`);
+            burstGrad.addColorStop(0.75, `rgba(220, 38, 38, ${(1 - localT) * 0.45})`);
+            burstGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = burstGrad;
+            ctx.beginPath();
+            ctx.arc(tg.x, tg.y, 58 + localT * 26, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 3.2 * (1 - localT * 0.6);
+            ctx.shadowColor = '#f97316';
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.arc(tg.x, tg.y, 16 + localT * 52, 0, Math.PI * 2);
             ctx.stroke();
+
+            // Fagulhas subindo da unidade queimada
+            for (let e = 0; e < 6; e++) {
+              const ang = (e / 6) * Math.PI * 2 + idx + sec * 3;
+              const ex = tg.x + Math.cos(ang) * (18 + localT * 28);
+              const ey = tg.y + Math.sin(ang) * 18 - localT * 36;
+              ctx.fillStyle = e % 2 === 0 ? '#fef08a' : '#fb923c';
+              ctx.beginPath();
+              ctx.arc(ex, ey, 3 * (1 - localT * 0.5), 0, Math.PI * 2);
+              ctx.fill();
+            }
           });
           ctx.restore();
-          drawBadge(vw * 0.5, bandY - 92, vfx.label || '🔥 RAJADA DE VILMA · -2 VIDA', '#f97316', '#fef3c7', masterAlpha);
+          drawBadge(vw * 0.5, bandY - 96, vfx.label || '🔥 CHAMA DE VILMA · -2 DANO EM TODOS OS INIMIGOS', '#f97316', '#fef3c7', masterAlpha);
           break;
         }
 
@@ -1396,7 +1822,6 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
         // 10. O SOL LVL 2 & A LUA LVL 2: Sugando vida do jogador inimigo / PHILIO ORB / SANIEL LVL 2 DRAIN (RENOVADO)
         case 'o_sol_lvl2_drain':
         case 'a_lua_lvl2_drain':
-        case 'philio_soul_orb':
         case 'saniel_lvl2_drain': {
           const isSol = vfx.type === 'o_sol_lvl2_drain';
           const isLua = vfx.type === 'a_lua_lvl2_drain';
@@ -1405,8 +1830,8 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           const toPt = src;
           const orbX = fromPt.x + (toPt.x - fromPt.x) * Math.min(1, p / 0.85);
           const orbY = fromPt.y + (toPt.y - fromPt.y) * Math.min(1, p / 0.85) - Math.sin(Math.min(1, p / 0.85) * Math.PI) * 52;
-          const c1 = isSol ? '#f97316' : isLua ? '#e11d48' : isSaniel ? '#fbbf24' : '#c084fc';
-          const c2 = isSol ? '#fef08a' : isLua ? '#c084fc' : isSaniel ? '#fef9c3' : '#818cf8';
+          const c1 = isSol ? '#f97316' : isLua ? '#e11d48' : '#fbbf24';
+          const c2 = isSol ? '#fef08a' : isLua ? '#c084fc' : '#fef9c3';
 
           if (isSaniel) {
             drawDivineMandala(fromPt.x, fromPt.y, 44 + p * 22, -sec * 3, '#f59e0b', '#e11d48', masterAlpha * 0.85);
@@ -1443,7 +1868,7 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           drawBadge(
             toPt.x,
             toPt.y - 84,
-            vfx.label || (isSol ? '☀️🩸 DRENO SOLAR (-1 HP INIMIGO)' : isLua ? '🌕🩸 DRENO EMINENTE (-1 HP INIMIGO)' : isSaniel ? '👑🪽 SANIEL LVL 2 ABSORVEU TODOS OS ATRIBUTOS!' : '✨ ORBE VITAL (+2 PODER PHILIO)'),
+            vfx.label || (isSol ? '☀️🩸 DRENO SOLAR (-1 HP INIMIGO)' : isLua ? '🌕🩸 DRENO EMINENTE (-1 HP INIMIGO)' : '👑🪽 SANIEL LVL 2 ABSORVEU TODOS OS ATRIBUTOS!'),
             c1,
             '#ffffff',
             masterAlpha
@@ -1451,49 +1876,360 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           break;
         }
 
-        // 11. FANX (RENOVADO) & CRISTALYS: Cúpula hidro-celestial + asas douradas de Arcanjo
-        case 'fanx_aqua_blessing':
-        case 'cristalys_aqua_heal': {
+        // 10B. PHILIO (MODERNIZADO): Vórtice de absorção cósmica drenando essência para Philio
+        case 'philio_soul_orb': {
+          const toPt = src;
+          const sources = targets.length > 0 ? targets : [primaryTarget];
+          const pullEase = 1 - Math.pow(1 - Math.min(1, p / 0.78), 2.6);
+          const absorbPulse = Math.max(0, (p - 0.58) / 0.42);
+
+          ctx.save();
+          ctx.globalAlpha = masterAlpha;
+
+          // Vórtice gravitacional espiralado sobre Philio sugando energia
+          const vortexGrad = ctx.createRadialGradient(toPt.x, toPt.y, 4, toPt.x, toPt.y, 68);
+          vortexGrad.addColorStop(0, 'rgba(245, 208, 254, 0.95)');
+          vortexGrad.addColorStop(0.35, 'rgba(139, 92, 246, 0.62)');
+          vortexGrad.addColorStop(0.75, 'rgba(49, 46, 129, 0.34)');
+          vortexGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = vortexGrad;
+          ctx.beginPath();
+          ctx.arc(toPt.x, toPt.y, 68, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 3 anéis de sucção contraindo em direção ao centro de Philio
+          for (let r = 0; r < 3; r++) {
+            const rp = (1 - ((p * 1.6 + r * 0.33) % 1));
+            ctx.strokeStyle = r % 2 === 0 ? '#c084fc' : '#818cf8';
+            ctx.lineWidth = 2.4;
+            ctx.shadowColor = '#a855f7';
+            ctx.shadowBlur = 16;
+            ctx.beginPath();
+            ctx.arc(toPt.x, toPt.y, 12 + rp * 54, sec * 4 + r * 2, sec * 4 + r * 2 + Math.PI * 1.45);
+            ctx.stroke();
+          }
+
+          // Fios de essência cósmica fluindo das vítimas eliminadas até Philio
+          sources.forEach((fromPt, sIdx) => {
+            const hasDist = Math.hypot(fromPt.x - toPt.x, fromPt.y - toPt.y) > 22;
+            const originX = hasDist ? fromPt.x : toPt.x + Math.cos(sIdx * 2.1) * 95;
+            const originY = hasDist ? fromPt.y : toPt.y - 85;
+            for (let strand = -1; strand <= 1; strand++) {
+              const mx = (originX + toPt.x) / 2 + strand * 44;
+              const my = (originY + toPt.y) / 2 - 28 + Math.sin(sec * 8 + strand) * 16;
+              ctx.strokeStyle = strand === 0 ? '#e879f9' : '#818cf8';
+              ctx.lineWidth = strand === 0 ? 3.2 : 1.8;
+              ctx.globalAlpha = (1 - absorbPulse * 0.6) * 0.85 * masterAlpha;
+              ctx.beginPath();
+              ctx.moveTo(originX, originY);
+              ctx.quadraticCurveTo(mx, my, toPt.x, toPt.y);
+              ctx.stroke();
+
+              // Partículas sendo sugadas ao longo de cada fio
+              const t = pullEase;
+              const mt = 1 - t;
+              const px = mt * mt * originX + 2 * mt * t * mx + t * t * toPt.x;
+              const py = mt * mt * originY + 2 * mt * t * my + t * t * toPt.y;
+              ctx.fillStyle = '#ffffff';
+              ctx.shadowColor = '#c084fc';
+              ctx.shadowBlur = 18;
+              ctx.beginPath();
+              ctx.arc(px, py, strand === 0 ? 7.5 * (1 - absorbPulse * 0.4) : 4.5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          });
+
+          // Pulso de crescimento ao concluir a absorção
+          if (absorbPulse > 0) {
+            ctx.globalAlpha = (1 - absorbPulse) * masterAlpha;
+            ctx.strokeStyle = '#f0abfc';
+            ctx.lineWidth = 4 * (1 - absorbPulse * 0.5);
+            ctx.beginPath();
+            ctx.arc(toPt.x, toPt.y, 16 + absorbPulse * 64, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          ctx.restore();
+          drawBadge(
+            toPt.x,
+            toPt.y - 86,
+            vfx.label || '🌌✨ ABSORÇÃO CÓSMICA DE PHILIO (+2 PODER)',
+            '#c084fc',
+            '#f5d0fe',
+            masterAlpha
+          );
+          break;
+        }
+
+        // 11A. FANAEL, O ARCANJO (CINEMATOGRÁFICO): Bênção angelical com detalhes de água cristalina
+        case 'fanx_aqua_blessing': {
           const tx = primaryTarget.x;
           const ty = primaryTarget.y;
-          const isCristalys = vfx.type === 'cristalys_aqua_heal';
-          if (!isCristalys) {
-            drawWingPair(tx, ty, 126, Math.min(1, p / 0.5), '#fde047', '#38bdf8', masterAlpha * 0.85);
+          const cw = primaryTarget.w || 98;
+          const ch = primaryTarget.h || 136;
+          const wingOpen = 1 - Math.pow(1 - Math.min(1, p / 0.36), 2.4);
+          const sealPulse = Math.max(0, Math.min(1, (p - 0.32) / 0.68));
+          const bellGlow = Math.sin(Math.min(1, p) * Math.PI);
+
+          // 1. Coluna de luz celestial dourado-turquesa com faixas cáusticas aquáticas suaves
+          ctx.save();
+          ctx.globalAlpha = masterAlpha * bellGlow;
+          const beamG = ctx.createLinearGradient(tx, ty - 230, tx, ty + 96);
+          beamG.addColorStop(0, 'transparent');
+          beamG.addColorStop(0.22, 'rgba(254, 249, 195, 0.48)');
+          beamG.addColorStop(0.55, 'rgba(56, 189, 248, 0.44)');
+          beamG.addColorStop(0.82, 'rgba(14, 165, 233, 0.28)');
+          beamG.addColorStop(1, 'transparent');
+          ctx.fillStyle = beamG;
+          ctx.fillRect(tx - 52, ty - 230, 104, 326);
+
+          // Cáusticas aquáticas translúcidas descendo pelo feixe de bênção
+          for (let c = 0; c < 4; c++) {
+            const cy = ty - 140 + ((p * 220 + c * 62) % 230);
+            ctx.strokeStyle = c % 2 === 0 ? 'rgba(186, 230, 253, 0.58)' : 'rgba(254, 240, 138, 0.45)';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(tx - 38, cy);
+            ctx.bezierCurveTo(
+              tx - 14,
+              cy - 10 + Math.sin(sec * 5 + c) * 6,
+              tx + 14,
+              cy + 10 - Math.sin(sec * 5 + c) * 6,
+              tx + 38,
+              cy
+            );
+            ctx.stroke();
           }
+          ctx.restore();
+
+          // 2. Halo serafínico de luz dourada e água-marinha acima da unidade abençoada
+          ctx.save();
+          const haloY = ty - ch * 0.56 - 14;
+          const haloScale = Math.min(1, p / 0.28);
+          ctx.globalAlpha = masterAlpha * bellGlow;
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 3.2;
+          ctx.shadowColor = '#facc15';
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.ellipse(tx, haloY, 34 * haloScale, 10.5 * haloScale, 0, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.strokeStyle = '#7dd3fc';
+          ctx.lineWidth = 1.6;
+          ctx.shadowColor = '#38bdf8';
+          ctx.shadowBlur = 14;
+          ctx.beginPath();
+          ctx.ellipse(tx, haloY + 3, 42 * haloScale, 13 * haloScale, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+
+          // 3. Dupla camada de asas angelicais (ouro celestial externo + brilho aquático translúcido interno)
+          drawWingPair(tx, ty - 14, 168, wingOpen, '#fef08a', '#38bdf8', masterAlpha * 0.92);
+          drawWingPair(tx, ty - 8, 126, wingOpen * 0.95, '#e0f2fe', '#0284c7', masterAlpha * 0.65);
+          drawDivineMandala(tx, ty, 48 + Math.sin(p * Math.PI) * 16, sec * 1.9, '#fde047', '#38bdf8', masterAlpha * 0.62);
+
+          // 4. Duas fitas líquidas de água abençoada espiralando de baixo para cima em torno da carta
+          ctx.save();
+          ctx.globalAlpha = masterAlpha * (1 - Math.max(0, (p - 0.78) / 0.22));
+          for (let strand = 0; strand < 2; strand++) {
+            const phaseOffset = strand * Math.PI;
+            const segs = 26;
+            const ribbonHead = Math.min(1, p * 1.25);
+            const ribbonTail = Math.max(0, ribbonHead - 0.56);
+            ctx.beginPath();
+            let started = false;
+            for (let i = 0; i <= segs; i++) {
+              const frac = ribbonTail + (ribbonHead - ribbonTail) * (i / segs);
+              const ang = frac * Math.PI * 3.1 + phaseOffset + sec * 1.4;
+              const rx = tx + Math.cos(ang) * (44 + Math.sin(frac * Math.PI) * 16);
+              const ry = ty + 62 - frac * 128;
+              if (!started) {
+                ctx.moveTo(rx, ry);
+                started = true;
+              } else {
+                ctx.lineTo(rx, ry);
+              }
+            }
+            ctx.strokeStyle = strand === 0 ? '#7dd3fc' : '#fef08a';
+            ctx.lineWidth = strand === 0 ? 5.2 : 3.4;
+            ctx.lineCap = 'round';
+            ctx.shadowColor = strand === 0 ? '#0ea5e9' : '#facc15';
+            ctx.shadowBlur = 18;
+            ctx.stroke();
+
+            // Brilho especular branco no núcleo da corrente líquida
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+            ctx.lineWidth = strand === 0 ? 1.8 : 1.2;
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          // 5. Brilho aquático-dourado integrando a bênção sobre a silhueta da carta (+10 Vida Máx)
+          if (sealPulse > 0) {
+            const sBell = Math.sin(sealPulse * Math.PI);
+            ctx.save();
+            ctx.beginPath();
+            ctx.roundRect(tx - cw / 2 - 2, ty - ch / 2 - 2, cw + 4, ch + 4, 11);
+            ctx.clip();
+            const sheenX = tx - cw + sealPulse * cw * 2.2;
+            const cardSheen = ctx.createLinearGradient(sheenX - 38, ty - ch / 2, sheenX + 38, ty + ch / 2);
+            cardSheen.addColorStop(0, 'transparent');
+            cardSheen.addColorStop(0.4, 'rgba(125, 211, 252, 0.65)');
+            cardSheen.addColorStop(0.5, 'rgba(255, 255, 255, 0.92)');
+            cardSheen.addColorStop(0.6, 'rgba(253, 224, 71, 0.62)');
+            cardSheen.addColorStop(1, 'transparent');
+            ctx.globalAlpha = sBell * 0.88 * masterAlpha;
+            ctx.fillStyle = cardSheen;
+            ctx.fillRect(tx - cw / 2 - 4, ty - ch / 2 - 4, cw + 8, ch + 8);
+            ctx.restore();
+
+            ctx.save();
+            ctx.globalAlpha = sBell * 0.92 * masterAlpha;
+            ctx.strokeStyle = '#7dd3fc';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.roundRect(tx - cw / 2 - 3, ty - ch / 2 - 3, cw + 6, ch + 6, 11);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          // 6. Ondas concêntricas cristalinas na base + gotículas peroladas ascendentes
           ctx.save();
           ctx.globalAlpha = masterAlpha;
           for (let r = 0; r < 3; r++) {
             const rp = Math.max(0, Math.min(1, p * 1.2 - r * 0.16));
-            ctx.strokeStyle = r % 2 === 0 ? '#38bdf8' : isCristalys ? '#34d399' : '#fde047';
-            ctx.lineWidth = 4 * (1 - rp * 0.5);
-            ctx.shadowColor = !isCristalys && r === 1 ? '#fbbf24' : '#0ea5e9';
-            ctx.shadowBlur = 20;
+            if (rp <= 0) continue;
+            ctx.globalAlpha = (1 - rp) * 0.92 * masterAlpha;
+            ctx.strokeStyle = r === 1 ? '#fef08a' : '#38bdf8';
+            ctx.lineWidth = (r === 0 ? 4.2 : 2.8) * (1 - rp * 0.45);
+            ctx.shadowColor = r === 1 ? '#facc15' : '#0ea5e9';
+            ctx.shadowBlur = 18;
             ctx.beginPath();
-            ctx.ellipse(tx, ty + 24 - r * 14, 26 + rp * 68, 11 + rp * 26, 0, 0, Math.PI * 2);
+            ctx.ellipse(tx, ty + 46 - r * 14 - rp * 20, 22 + rp * 76, 9 + rp * 25, 0, 0, Math.PI * 2);
             ctx.stroke();
           }
-          for (let d = 0; d < 14; d++) {
-            const ang = (d / 14) * Math.PI * 2;
-            const gx = tx + Math.cos(ang + sec * 2.2) * 38;
-            const gy = ty + 30 - p * 82 - (d % 4) * 12;
-            ctx.fillStyle = d % 3 === 0 ? '#fef08a' : d % 2 === 0 ? '#7dd3fc' : isCristalys ? '#6ee7b7' : '#ffffff';
+
+          for (let d = 0; d < 22; d++) {
+            const ang = (d / 22) * Math.PI * 2 + sec * 2.1;
+            const rad = 28 + Math.sin(d * 1.9 + p * 4.5) * 26;
+            const gx = tx + Math.cos(ang) * rad;
+            const gy = ty + 52 - p * 124 - (d % 6) * 9;
+            ctx.globalAlpha = bellGlow * 0.95 * masterAlpha;
+            ctx.fillStyle = d % 3 === 0 ? '#fef9c3' : d % 2 === 0 ? '#7dd3fc' : '#ffffff';
+            ctx.shadowColor = d % 3 === 0 ? '#fde047' : '#38bdf8';
+            ctx.shadowBlur = 12;
             ctx.beginPath();
-            ctx.arc(gx, gy, 4.2, 0, Math.PI * 2);
+            if (d % 2 === 0) {
+              // Gota cristalina estilizada subindo com a bênção
+              ctx.moveTo(gx, gy - 6.5);
+              ctx.quadraticCurveTo(gx + 4.5, gy + 1.5, gx, gy + 5.2);
+              ctx.quadraticCurveTo(gx - 4.5, gy + 1.5, gx, gy - 6.5);
+            } else {
+              ctx.arc(gx, gy, 3.2, 0, Math.PI * 2);
+            }
             ctx.fill();
           }
           ctx.restore();
+
           drawBadge(
             tx,
-            ty - 84,
-            vfx.label || (isCristalys ? '💧💚 CURA AQUÁTICA DE CRISTALYS (+6 VIDA)' : '🌊🪽 BÊNÇÃO DA MARÉ DE FANX (+10 VIDA MÁX)'),
-            isCristalys ? '#38bdf8' : '#fbbf24',
+            ty - 98,
+            vfx.label || '🌊🪽 BÊNÇÃO ANGELICAL DE FANAEL (+10 VIDA MÁX)',
+            '#38bdf8',
+            '#fef9c3',
+            masterAlpha
+          );
+          break;
+        }
+
+        // 11B. CRISTALYS (MODERNIZADA): Banho mágico de água cristalina entregando CURA (2R)
+        case 'cristalys_aqua_heal': {
+          const tx = primaryTarget.x;
+          const ty = primaryTarget.y;
+
+          ctx.save();
+          ctx.globalAlpha = masterAlpha;
+
+          // Halo de nascente mágica acima da carta alvo
+          const topY = ty - 74;
+          const haloGrad = ctx.createRadialGradient(tx, topY, 4, tx, topY, 56);
+          haloGrad.addColorStop(0, 'rgba(224, 242, 254, 0.95)');
+          haloGrad.addColorStop(0.5, 'rgba(56, 189, 248, 0.65)');
+          haloGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = haloGrad;
+          ctx.beginPath();
+          ctx.ellipse(tx, topY, 54, 18, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Cascatas translúcidas de água mágica banhando a carta de cima para baixo
+          for (let stream = -2; stream <= 2; stream++) {
+            const xOff = stream * 15;
+            const streamTop = topY + 4;
+            const streamBot = ty + 62;
+            const flowT = Math.min(1, p * 1.45 - Math.abs(stream) * 0.08);
+            if (flowT <= 0) continue;
+            const curBot = streamTop + (streamBot - streamTop) * flowT;
+            const sGrad = ctx.createLinearGradient(tx + xOff, streamTop, tx + xOff, curBot);
+            sGrad.addColorStop(0, 'rgba(224, 242, 254, 0.92)');
+            sGrad.addColorStop(0.5, stream % 2 === 0 ? 'rgba(56, 189, 248, 0.78)' : 'rgba(52, 211, 153, 0.74)');
+            sGrad.addColorStop(1, 'rgba(110, 231, 183, 0.12)');
+            ctx.strokeStyle = sGrad;
+            ctx.lineWidth = stream === 0 ? 11 : 7.5;
+            ctx.lineCap = 'round';
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.moveTo(tx + xOff, streamTop);
+            ctx.bezierCurveTo(
+              tx + xOff + Math.sin(sec * 8 + stream) * 14,
+              (streamTop + curBot) * 0.5,
+              tx + xOff - Math.sin(sec * 8 + stream) * 12,
+              curBot - 16,
+              tx + xOff * 1.25,
+              curBot
+            );
+            ctx.stroke();
+          }
+
+          // Ondas de respingo na base da unidade durante o banho mágico
+          for (let r = 0; r < 3; r++) {
+            const rp = (p * 1.5 + r * 0.3) % 1;
+            ctx.globalAlpha = (1 - rp) * 0.9 * masterAlpha;
+            ctx.strokeStyle = r % 2 === 0 ? '#7dd3fc' : '#6ee7b7';
+            ctx.lineWidth = 3.2 * (1 - rp * 0.5);
+            ctx.beginPath();
+            ctx.ellipse(tx, ty + 54, 18 + rp * 64, 7 + rp * 20, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          // Gotas borrifando e cintilando em verde-água
+          ctx.globalAlpha = masterAlpha;
+          for (let g = 0; g < 16; g++) {
+            const ang = (g / 16) * Math.PI * 2 + sec * 2.4;
+            const gx = tx + Math.cos(ang) * (24 + (g % 4) * 10);
+            const gy = ty + 48 - ((p * 130 + g * 11) % 118);
+            ctx.fillStyle = g % 3 === 0 ? '#ffffff' : g % 2 === 0 ? '#7dd3fc' : '#6ee7b7';
+            ctx.beginPath();
+            ctx.arc(gx, gy, 3.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.restore();
+          drawBadge(
+            tx,
+            ty - 94,
+            vfx.label || '💧💚 BANHO MÁGICO DE CRISTALYS · CURA (2R)!',
+            '#34d399',
             '#e0f2fe',
             masterAlpha
           );
           break;
         }
 
-        // 12. VANUSA: Portal místico aquático de Revelar
+        // 12. VANUSA: Portal místico aquático de Revelar (mantido como fallback legado)
         case 'vanusa_reveal': {
           ctx.save();
           ctx.globalAlpha = masterAlpha;
@@ -1504,20 +2240,8 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           ctx.beginPath();
           ctx.arc(src.x, src.y, 28 + Math.sin(p * Math.PI) * 58, 0, Math.PI * 2);
           ctx.stroke();
-          // Eye shape
-          ctx.strokeStyle = '#e0f2fe';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(src.x - 42, src.y);
-          ctx.quadraticCurveTo(src.x, src.y - 32, src.x + 42, src.y);
-          ctx.quadraticCurveTo(src.x, src.y + 32, src.x - 42, src.y);
-          ctx.stroke();
-          ctx.fillStyle = '#38bdf8';
-          ctx.beginPath();
-          ctx.arc(src.x, src.y, 10, 0, Math.PI * 2);
-          ctx.fill();
           ctx.restore();
-          drawBadge(src.x, src.y - 82, vfx.label || '🔮💧 REVELAR DE VANUSA ATIVADO!', '#38bdf8', '#e0f2fe', masterAlpha);
+          drawBadge(src.x, src.y - 82, vfx.label || '👁️ REVELAR ATIVADO!', '#38bdf8', '#e0f2fe', masterAlpha);
           break;
         }
 
@@ -1549,31 +2273,18 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           break;
         }
 
-        // 14. GLAUCO: Floco de neve mágico atinge a defesa da unidade
+        // 14. GLAUCO (MODERNIZADO): Pequena orbe gélida se integrando à unidade escolhida
         case 'glauco_snowflake_def': {
-          const travel = Math.min(1, p / 0.65);
-          const tx = primaryTarget.x + (primaryTarget.w ? primaryTarget.w * 0.16 : 14);
-          const ty = primaryTarget.y + (primaryTarget.h ? primaryTarget.h * 0.34 : 38);
-          const fx = src.x + (tx - src.x) * travel;
-          const fy = src.y + (ty - src.y) * travel - Math.sin(travel * Math.PI) * 48;
-
-          ctx.save();
-          ctx.globalAlpha = masterAlpha;
-          ctx.translate(fx, fy);
-          ctx.rotate(sec * 6);
-          ctx.strokeStyle = '#a5f3fc';
-          ctx.lineWidth = 3;
-          ctx.shadowColor = '#22d3ee';
-          ctx.shadowBlur = 18;
-          for (let b = 0; b < 6; b++) {
-            const ang = (b * Math.PI) / 3;
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(Math.cos(ang) * 18, Math.sin(ang) * 18);
-            ctx.stroke();
-          }
-          ctx.restore();
-          drawBadge(tx, ty - 42, vfx.label || '❄️🛡️ +4 DEFESA (GLAUCO)', '#22d3ee', '#ecfeff', masterAlpha);
+          drawElementalIntegrationOrb({
+            coreColor: '#e0f2fe',
+            midColor: '#38bdf8',
+            outerColor: '#0284c7',
+            glowColor: '#22d3ee',
+            elementKind: 'ice',
+            badgeText: '❄️🛡️ +4 DEFESA (ORBE GÉLIDA DE GLAUCO)',
+            badgeBorder: '#22d3ee',
+            badgeTextCol: '#ecfeff',
+          });
           break;
         }
 
@@ -1893,35 +2604,104 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           break;
         }
 
-        // 18. FINN / MIPO: Energia subindo até a barra de vida do jogador
+        // 18. FINN & MIPO (MODERNIZADOS): Núcleo arcano / feérico voando até a barra de vida e expandindo novo segmento
         case 'finn_hp_boost':
         case 'mipo_purple_hp': {
           const isMipo = vfx.type === 'mipo_purple_hp';
-          const color = isMipo ? '#c084fc' : '#34d399';
+          const mainCol = isMipo ? '#c084fc' : '#34d399';
+          const secCol = isMipo ? '#e879f9' : '#f472b6';
           const hpPt = primaryTarget;
-          const travel = Math.min(1, p / 0.72);
-          const ox = src.x + (hpPt.x - src.x) * travel;
-          const oy = src.y + (hpPt.y - src.y) * travel - Math.sin(travel * Math.PI) * 60;
+          const travel = Math.min(1, p / 0.62);
+          const ease = 1 - Math.pow(1 - travel, 2.8);
+          const ox = src.x + (hpPt.x - src.x) * ease;
+          const oy = src.y + (hpPt.y - src.y) * ease - Math.sin(travel * Math.PI) * 74;
+          const bloom = Math.max(0, (p - 0.56) / 0.44);
 
           ctx.save();
           ctx.globalAlpha = masterAlpha;
-          ctx.fillStyle = color;
-          ctx.shadowColor = color;
-          ctx.shadowBlur = 22;
-          ctx.beginPath();
-          ctx.arc(ox, oy, 12, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          ctx.arc(hpPt.x, hpPt.y, 18 + Math.sin(p * Math.PI) * 28, 0, Math.PI * 2);
-          ctx.stroke();
+
+          // Rastro etéreo curvo ligando a carta ao cristal de vida
+          for (let s = 1; s <= 12; s++) {
+            const st = Math.max(0, travel - s * 0.045);
+            const se = 1 - Math.pow(1 - st, 2.8);
+            const sx = src.x + (hpPt.x - src.x) * se;
+            const sy = src.y + (hpPt.y - src.y) * se - Math.sin(st * Math.PI) * 74;
+            ctx.fillStyle = s % 2 === 0 ? mainCol : secCol;
+            ctx.globalAlpha = (1 - s / 13) * (1 - bloom * 0.7) * 0.85 * masterAlpha;
+            ctx.beginPath();
+            ctx.arc(sx, sy, Math.max(2, 8.5 * (1 - s / 13)), 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Orbe cristalina em voo
+          if (bloom < 0.55) {
+            const sc = 1 - bloom / 0.55;
+            ctx.globalAlpha = masterAlpha * sc;
+            const oGrad = ctx.createRadialGradient(ox, oy, 2, ox, oy, 24 * sc);
+            oGrad.addColorStop(0, '#ffffff');
+            oGrad.addColorStop(0.35, mainCol);
+            oGrad.addColorStop(0.75, secCol);
+            oGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = oGrad;
+            ctx.shadowColor = mainCol;
+            ctx.shadowBlur = 26;
+            ctx.beginPath();
+            ctx.arc(ox, oy, 24 * sc, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Losango de cristal girando no núcleo
+            ctx.save();
+            ctx.translate(ox, oy);
+            ctx.rotate(sec * 6);
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.moveTo(0, -9 * sc);
+            ctx.lineTo(7 * sc, 0);
+            ctx.lineTo(0, 9 * sc);
+            ctx.lineTo(-7 * sc, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Expansão cristalina na barra de vida ao receber o ponto extra
+          if (bloom > 0) {
+            const easeB = 1 - Math.pow(1 - bloom, 3);
+            ctx.globalAlpha = (1 - bloom) * masterAlpha;
+            const burstG = ctx.createRadialGradient(hpPt.x, hpPt.y, 4, hpPt.x, hpPt.y, 68 * easeB);
+            burstG.addColorStop(0, '#ffffff');
+            burstG.addColorStop(0.4, mainCol);
+            burstG.addColorStop(0.8, secCol);
+            burstG.addColorStop(1, 'transparent');
+            ctx.fillStyle = burstG;
+            ctx.beginPath();
+            ctx.arc(hpPt.x, hpPt.y, 68 * easeB, 0, Math.PI * 2);
+            ctx.fill();
+
+            for (let r = 0; r < 2; r++) {
+              ctx.strokeStyle = r === 0 ? mainCol : secCol;
+              ctx.lineWidth = (r === 0 ? 4 : 2.5) * (1 - bloom * 0.6);
+              ctx.beginPath();
+              ctx.arc(hpPt.x, hpPt.y, 14 + easeB * (46 + r * 20), 0, Math.PI * 2);
+              ctx.stroke();
+            }
+
+            for (let pt = 0; pt < 10; pt++) {
+              const a = (pt / 10) * Math.PI * 2 + sec * 2.5;
+              const d = 14 + easeB * 52;
+              ctx.fillStyle = pt % 2 === 0 ? '#ffffff' : secCol;
+              ctx.beginPath();
+              ctx.arc(hpPt.x + Math.cos(a) * d, hpPt.y + Math.sin(a) * d, 3.2 * (1 - bloom * 0.4), 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+
           ctx.restore();
           drawBadge(
-            hpPt.x + 70,
-            hpPt.y - 34,
-            vfx.label || (isMipo ? '💜 +1 VIDA MÁX ROXA (MIPO)' : '🌿💚 +1 VIDA MÁX (FINN)'),
-            color,
+            hpPt.x,
+            hpPt.y - 42,
+            vfx.label || (isMipo ? '💜 +1 VIDA MÁX E ATUAL (MIPO)' : '🧚💚 +1 VIDA MÁX E ATUAL (FINN)'),
+            mainCol,
             '#ffffff',
             masterAlpha
           );
@@ -1964,29 +2744,18 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           break;
         }
 
-        // 20. MARA: Poção energizada aumenta o Poder
+        // 20. MARA (MODERNIZADA): Pequena orbe elétrica se integrando à unidade escolhida
         case 'mara_potion_power': {
-          const tx = primaryTarget.x - (primaryTarget.w ? primaryTarget.w * 0.25 : 22);
-          const ty = primaryTarget.y + (primaryTarget.h ? primaryTarget.h * 0.32 : 34);
-          const flaskX = src.x + (tx - src.x) * Math.min(1, p / 0.55);
-          const flaskY = src.y + (ty - src.y) * Math.min(1, p / 0.55) - Math.sin(Math.min(1, p / 0.55) * Math.PI) * 58;
-
-          ctx.save();
-          ctx.globalAlpha = masterAlpha;
-          ctx.fillStyle = '#fde047';
-          ctx.strokeStyle = '#22d3ee';
-          ctx.lineWidth = 3;
-          ctx.shadowColor = '#22d3ee';
-          ctx.shadowBlur = 22;
-          ctx.beginPath();
-          ctx.arc(flaskX, flaskY, 14, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-          if (p >= 0.5) {
-            drawBolt(flaskX, flaskY, tx, ty, '#fde047', 3.5, masterAlpha, sec);
-          }
-          ctx.restore();
-          drawBadge(tx, ty - 44, vfx.label || '⚗️⚡ POÇÃO DE MARA (+6 PODER)', '#fde047', '#ecfeff', masterAlpha);
+          drawElementalIntegrationOrb({
+            coreColor: '#fef08a',
+            midColor: '#22d3ee',
+            outerColor: '#eab308',
+            glowColor: '#38bdf8',
+            elementKind: 'electric',
+            badgeText: '⚡ +6 PODER (ORBE ELÉTRICA DE MARA)',
+            badgeBorder: '#fde047',
+            badgeTextCol: '#ecfeff',
+          });
           break;
         }
 
@@ -2427,42 +3196,18 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           break;
         }
 
-        // 35. NULIO (T1 Divino): Lótus sagrado (+4 Poder + Cura 2R)
+        // 35. NULIO (MODERNIZADO): Pequena orbe divina se integrando à unidade escolhida (+4 Poder + Cura 2R)
         case 'nulio_luz_revigorante': {
-          const tx = primaryTarget.x;
-          const ty = primaryTarget.y;
-          ctx.save();
-          ctx.globalAlpha = masterAlpha;
-          if (Math.hypot(src.x - tx, src.y - ty) > 15) {
-            ctx.strokeStyle = '#34d399';
-            ctx.lineWidth = 4;
-            ctx.shadowColor = '#fbbf24';
-            ctx.shadowBlur = 18;
-            ctx.beginPath();
-            ctx.moveTo(src.x, src.y);
-            ctx.lineTo(tx, ty);
-            ctx.stroke();
-          }
-          // Pétalas de lótus verde-douradas
-          for (let i = 0; i < 8; i++) {
-            const ang = (i / 8) * Math.PI * 2 + sec * 1.4;
-            const rx = tx + Math.cos(ang) * 40;
-            const ry = ty + Math.sin(ang) * 40;
-            ctx.fillStyle = i % 2 === 0 ? 'rgba(52, 211, 153, 0.72)' : 'rgba(251, 191, 36, 0.72)';
-            ctx.beginPath();
-            ctx.ellipse(rx, ry, 14, 6, ang, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          for (let m = 0; m < 10; m++) {
-            const mx = tx + Math.sin(m * 1.7 + sec * 3) * 36;
-            const my = ty + 44 - p * 88 - m * 4;
-            ctx.fillStyle = m % 2 === 0 ? '#fef08a' : '#6ee7b7';
-            ctx.beginPath();
-            ctx.arc(mx, my, 4, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          ctx.restore();
-          drawBadge(tx, ty - 84, vfx.label || '🌿✨ LUZ DE NULIO · +4 PODER & CURA (2R)', '#34d399', '#fef3c7', masterAlpha);
+          drawElementalIntegrationOrb({
+            coreColor: '#fef9c3',
+            midColor: '#fbbf24',
+            outerColor: '#34d399',
+            glowColor: '#f59e0b',
+            elementKind: 'divine',
+            badgeText: '✨ ORBE DIVINA DE NULIO · +4 PODER & CURA (2R)',
+            badgeBorder: '#fbbf24',
+            badgeTextCol: '#fef9c3',
+          });
           break;
         }
 
@@ -2923,48 +3668,104 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
           break;
         }
 
-        // 51. TARGOR, O DRAGÃO (T1 SOMBRIO): Sopro Pestilento de Praga em 2 inimigos
+        // 51. TARGOR, O DRAGÃO (MODERNIZADO): Baforada de Dragão Negra volumétrica
         case 'targor_praga_breath': {
           ctx.save();
           ctx.globalAlpha = masterAlpha;
-          drawDivineMandala(src.x, src.y, 58, sec * 2.5, '#a855f7', '#84cc16', masterAlpha * 0.85);
-          targets.forEach((tg) => {
-            const beamProg = Math.min(1, p / 0.6);
-            const curX = src.x + (tg.x - src.x) * beamProg;
-            const curY = src.y + (tg.y - src.y) * beamProg;
-            const grad = ctx.createLinearGradient(src.x, src.y, curX, curY);
-            grad.addColorStop(0, 'rgba(88, 28, 135, 0.85)');
-            grad.addColorStop(0.6, 'rgba(168, 85, 247, 0.9)');
-            grad.addColorStop(1, 'rgba(132, 204, 22, 0.95)');
-            ctx.strokeStyle = grad;
-            ctx.lineWidth = 14 * (1 - p * 0.35);
-            ctx.lineCap = 'round';
-            ctx.shadowColor = '#a855f7';
-            ctx.shadowBlur = 24;
-            ctx.beginPath();
-            ctx.moveTo(src.x, src.y);
-            ctx.lineTo(curX, curY);
-            ctx.stroke();
 
-            if (p >= 0.32) {
-              const imp = Math.min(1, (p - 0.32) / 0.68);
-              ctx.strokeStyle = '#a3e635';
-              ctx.lineWidth = 3.5;
+          // Brilho sombrio na boca do dragão Targor
+          const mawGrad = ctx.createRadialGradient(src.x, src.y, 4, src.x, src.y, 58);
+          mawGrad.addColorStop(0, 'rgba(192, 132, 252, 0.95)');
+          mawGrad.addColorStop(0.4, 'rgba(15, 10, 24, 0.92)');
+          mawGrad.addColorStop(0.8, 'rgba(88, 28, 135, 0.45)');
+          mawGrad.addColorStop(1, 'transparent');
+          ctx.fillStyle = mawGrad;
+          ctx.beginPath();
+          ctx.arc(src.x, src.y, 58, 0, Math.PI * 2);
+          ctx.fill();
+
+          targets.forEach((tg, tIdx) => {
+            const dx = tg.x - src.x;
+            const dy = tg.y - src.y;
+            const dist = Math.max(20, Math.hypot(dx, dy));
+            const angle = Math.atan2(dy, dx);
+            const coneProg = Math.min(1, p / 0.56);
+            const curLen = dist * coneProg;
+
+            // Cone de baforada negra em camadas (fumaça abissal + núcleo negro-violeta)
+            ctx.save();
+            ctx.translate(src.x, src.y);
+            ctx.rotate(angle);
+
+            const outerSpread = 16 + coneProg * 54;
+            const blackCone = ctx.createLinearGradient(0, 0, curLen, 0);
+            blackCone.addColorStop(0, 'rgba(10, 6, 16, 0.96)');
+            blackCone.addColorStop(0.55, 'rgba(24, 12, 38, 0.9)');
+            blackCone.addColorStop(0.85, 'rgba(88, 28, 135, 0.72)');
+            blackCone.addColorStop(1, 'rgba(132, 204, 22, 0.25)');
+            ctx.fillStyle = blackCone;
+            ctx.shadowColor = '#581c87';
+            ctx.shadowBlur = 26;
+            ctx.beginPath();
+            ctx.moveTo(0, -10);
+            ctx.quadraticCurveTo(curLen * 0.55, -outerSpread * 0.8, curLen, -outerSpread);
+            ctx.arc(curLen, 0, outerSpread, -Math.PI / 2, Math.PI / 2);
+            ctx.quadraticCurveTo(curLen * 0.55, outerSpread * 0.8, 0, 10);
+            ctx.closePath();
+            ctx.fill();
+
+            // Nuvens turbulentas de fogo negro rolando dentro da baforada
+            for (let puff = 0; puff < 14; puff++) {
+              const frac = ((puff / 14) + p * 1.45) % 1;
+              if (frac > coneProg) continue;
+              const px = frac * dist;
+              const spread = (8 + frac * 42) * Math.sin(puff * 2.3 + sec * 7 + tIdx);
+              const pr = 10 + frac * 22;
+              const pGrad = ctx.createRadialGradient(px, spread, 2, px, spread, pr);
+              pGrad.addColorStop(0, puff % 3 === 0 ? 'rgba(168, 85, 247, 0.75)' : 'rgba(5, 4, 10, 0.95)');
+              pGrad.addColorStop(0.6, 'rgba(28, 12, 46, 0.78)');
+              pGrad.addColorStop(1, 'transparent');
+              ctx.fillStyle = pGrad;
               ctx.beginPath();
-              ctx.arc(tg.x, tg.y, 24 + imp * 46, 0, Math.PI * 2);
+              ctx.arc(px, spread, pr, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Brasas sombrias e toxinas voando na baforada
+            for (let em = 0; em < 12; em++) {
+              const frac = ((em / 12) + p * 1.8) % 1;
+              if (frac > coneProg) continue;
+              const ex = frac * dist;
+              const ey = Math.sin(em * 3.1 + sec * 10) * (10 + frac * 40);
+              ctx.fillStyle = em % 3 === 0 ? '#a3e635' : em % 2 === 0 ? '#d946ef' : '#09090b';
+              ctx.beginPath();
+              ctx.arc(ex, ey, 3.2, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+
+            // Envolvimento sombrio no impacto sobre o inimigo
+            if (p >= 0.34) {
+              const imp = Math.min(1, (p - 0.34) / 0.66);
+              const hitGrad = ctx.createRadialGradient(tg.x, tg.y, 4, tg.x, tg.y, 58 + imp * 24);
+              hitGrad.addColorStop(0, `rgba(9, 7, 16, ${0.9 * (1 - imp * 0.4)})`);
+              hitGrad.addColorStop(0.55, `rgba(107, 33, 168, ${0.65 * (1 - imp * 0.5)})`);
+              hitGrad.addColorStop(0.88, `rgba(132, 204, 22, ${0.42 * (1 - imp)})`);
+              hitGrad.addColorStop(1, 'transparent');
+              ctx.fillStyle = hitGrad;
+              ctx.beginPath();
+              ctx.arc(tg.x, tg.y, 58 + imp * 24, 0, Math.PI * 2);
+              ctx.fill();
+
+              ctx.strokeStyle = '#a3e635';
+              ctx.lineWidth = 3 * (1 - imp * 0.5);
+              ctx.beginPath();
+              ctx.arc(tg.x, tg.y, 20 + imp * 46, 0, Math.PI * 2);
               ctx.stroke();
-              for (let i = 0; i < 8; i++) {
-                const a = (i / 8) * Math.PI * 2 + sec * 4;
-                const r = 16 + imp * 38;
-                ctx.fillStyle = i % 2 === 0 ? '#a3e635' : '#d946ef';
-                ctx.beginPath();
-                ctx.arc(tg.x + Math.cos(a) * r, tg.y + Math.sin(a) * r, 4, 0, Math.PI * 2);
-                ctx.fill();
-              }
             }
           });
           ctx.restore();
-          drawBadge(src.x, src.y - 88, vfx.label || '🐉☠️ SOPRO DE TARGOR · PRAGA (-25% ATRIBUTOS)!', '#a855f7', '#ecfccb', masterAlpha);
+          drawBadge(src.x, src.y - 90, vfx.label || '🐉🖤 BAFORADA NEGRA DE TARGOR · PRAGA (2R)!', '#a855f7', '#ecfccb', masterAlpha);
           break;
         }
 
@@ -3301,6 +4102,321 @@ export const UnitAnimationsOverlay: React.FC<UnitAnimationsOverlayProps> = ({ vf
             '#ecfccb',
             masterAlpha
           );
+          break;
+        }
+
+        // 58. CELIA (BÔNUS DE COMPRA GELO): Gelo e flocos de neve giratórios na unidade beneficiada
+        case 'celia_frost_bonus': {
+          const tx = primaryTarget.x;
+          const ty = primaryTarget.y;
+          ctx.save();
+          ctx.globalAlpha = masterAlpha;
+
+          const haloG = ctx.createRadialGradient(tx, ty, 6, tx, ty, 88);
+          haloG.addColorStop(0, 'rgba(240, 249, 255, 0.92)');
+          haloG.addColorStop(0.45, 'rgba(56, 189, 248, 0.55)');
+          haloG.addColorStop(1, 'transparent');
+          ctx.fillStyle = haloG;
+          ctx.beginPath();
+          ctx.arc(tx, ty, 88, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Anel de geada cristalina expandindo
+          ctx.strokeStyle = '#bae6fd';
+          ctx.lineWidth = 3.2 * (1 - p * 0.45);
+          ctx.shadowColor = '#38bdf8';
+          ctx.shadowBlur = 20;
+          ctx.beginPath();
+          ctx.arc(tx, ty, 20 + p * 68, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // 8 flocos de neve detalhados de 6 pontas rodopiando ao redor da unidade
+          for (let f = 0; f < 8; f++) {
+            const ang = (f / 8) * Math.PI * 2 + sec * 2.4;
+            const dist = 26 + Math.sin(p * Math.PI) * 44 + (f % 2) * 12;
+            const fx = tx + Math.cos(ang) * dist;
+            const fy = ty + Math.sin(ang) * dist - p * 22;
+            const sz = f % 2 === 0 ? 13 : 9;
+            ctx.save();
+            ctx.translate(fx, fy);
+            ctx.rotate(sec * (f % 2 === 0 ? 3.2 : -2.6) + f);
+            ctx.strokeStyle = f % 2 === 0 ? '#ffffff' : '#7dd3fc';
+            ctx.lineWidth = 2;
+            for (let b = 0; b < 6; b++) {
+              const ba = (b * Math.PI) / 3;
+              ctx.beginPath();
+              ctx.moveTo(0, 0);
+              ctx.lineTo(Math.cos(ba) * sz, Math.sin(ba) * sz);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+
+          ctx.restore();
+          drawBadge(
+            tx,
+            ty - 92,
+            vfx.label || '❄️✨ BÔNUS DE CELIA · +5 PODER (CLASSE GELO)!',
+            '#38bdf8',
+            '#e0f2fe',
+            masterAlpha
+          );
+          break;
+        }
+
+        // 59. CELIA (BARREIRA MÁGICA DE IMUNIDADE A GELO): Escudo hexagonal glacial bloqueando dano de Gelo
+        case 'celia_ice_barrier': {
+          const tx = primaryTarget.x;
+          const ty = primaryTarget.y;
+          const r = 64 + Math.sin(Math.min(1, p * 2.5) * Math.PI * 0.5) * 14;
+          ctx.save();
+          ctx.translate(tx, ty);
+          ctx.globalAlpha = masterAlpha;
+
+          // Cúpula hexagonal translúcida de gelo arcano
+          const bGrad = ctx.createRadialGradient(-16, -16, 4, 0, 0, r * 1.15);
+          bGrad.addColorStop(0, 'rgba(240, 249, 255, 0.65)');
+          bGrad.addColorStop(0.55, 'rgba(56, 189, 248, 0.34)');
+          bGrad.addColorStop(1, 'rgba(186, 230, 253, 0.92)');
+          ctx.fillStyle = bGrad;
+          ctx.strokeStyle = '#e0f2fe';
+          ctx.lineWidth = 4;
+          ctx.shadowColor = '#22d3ee';
+          ctx.shadowBlur = 28;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3 - Math.PI / 6;
+            const px = Math.cos(a) * r;
+            const py = Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // Malha rúnica interna e reflexo diagonal prismático
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.68)';
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3 - Math.PI / 6;
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(a) * r * 0.88, Math.sin(a) * r * 0.88);
+          }
+          ctx.stroke();
+
+          // Estilhaços de gelo ricocheteando na barreira
+          for (let s = 0; s < 10; s++) {
+            const a = (s / 10) * Math.PI * 2 + sec * 1.6;
+            const d = r + 6 + p * 34;
+            ctx.fillStyle = s % 2 === 0 ? '#ffffff' : '#67e8f9';
+            ctx.beginPath();
+            ctx.arc(Math.cos(a) * d, Math.sin(a) * d, 3.2 * (1 - p * 0.5), 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.restore();
+          drawBadge(
+            tx,
+            ty - r - 22,
+            vfx.label || '❄️🛡️ BARREIRA MÁGICA · CELIA IMUNE A GELO!',
+            '#38bdf8',
+            '#f0f9ff',
+            masterAlpha
+          );
+          break;
+        }
+
+        // 60. VILMA (BÔNUS DE COMPRA FOGO): Chamas e brasas envolventes na unidade beneficiada
+        case 'vilma_fire_bonus': {
+          const tx = primaryTarget.x;
+          const ty = primaryTarget.y;
+          ctx.save();
+          ctx.globalAlpha = masterAlpha;
+
+          const haloG = ctx.createRadialGradient(tx, ty, 6, tx, ty, 90);
+          haloG.addColorStop(0, 'rgba(254, 240, 138, 0.94)');
+          haloG.addColorStop(0.45, 'rgba(249, 115, 22, 0.62)');
+          haloG.addColorStop(0.82, 'rgba(220, 38, 38, 0.25)');
+          haloG.addColorStop(1, 'transparent');
+          ctx.fillStyle = haloG;
+          ctx.beginPath();
+          ctx.arc(tx, ty, 90, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Anel de fogo em espiral subindo
+          ctx.strokeStyle = '#fb923c';
+          ctx.lineWidth = 3.5 * (1 - p * 0.45);
+          ctx.shadowColor = '#f97316';
+          ctx.shadowBlur = 22;
+          ctx.beginPath();
+          ctx.arc(tx, ty, 20 + p * 68, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Línguas de chama e brasas ascendendo ao redor da unidade
+          for (let f = 0; f < 12; f++) {
+            const ang = (f / 12) * Math.PI * 2 + sec * 3.2;
+            const dist = 24 + Math.sin(p * Math.PI) * 36;
+            const fx = tx + Math.cos(ang) * dist;
+            const fy = ty + Math.sin(ang) * dist * 0.65 - p * 44;
+            ctx.fillStyle = f % 3 === 0 ? '#fef08a' : f % 2 === 0 ? '#fb923c' : '#ef4444';
+            ctx.beginPath();
+            ctx.moveTo(fx, fy - 12);
+            ctx.quadraticCurveTo(fx + 7, fy, fx, fy + 7);
+            ctx.quadraticCurveTo(fx - 7, fy, fx, fy - 12);
+            ctx.fill();
+          }
+
+          ctx.restore();
+          drawBadge(
+            tx,
+            ty - 92,
+            vfx.label || '🔥✨ BÔNUS DE VILMA · +5 PODER (CLASSE FOGO)!',
+            '#f97316',
+            '#fef3c7',
+            masterAlpha
+          );
+          break;
+        }
+
+        // 61. VILMA (BARREIRA MÁGICA DE IMUNIDADE A FOGO): Escudo hexagonal flamejante bloqueando dano de Fogo
+        case 'vilma_fire_barrier': {
+          const tx = primaryTarget.x;
+          const ty = primaryTarget.y;
+          const r = 64 + Math.sin(Math.min(1, p * 2.5) * Math.PI * 0.5) * 14;
+          ctx.save();
+          ctx.translate(tx, ty);
+          ctx.globalAlpha = masterAlpha;
+
+          const bGrad = ctx.createRadialGradient(-14, -14, 4, 0, 0, r * 1.15);
+          bGrad.addColorStop(0, 'rgba(254, 240, 138, 0.68)');
+          bGrad.addColorStop(0.55, 'rgba(249, 115, 22, 0.36)');
+          bGrad.addColorStop(1, 'rgba(239, 68, 68, 0.92)');
+          ctx.fillStyle = bGrad;
+          ctx.strokeStyle = '#fde047';
+          ctx.lineWidth = 4;
+          ctx.shadowColor = '#f97316';
+          ctx.shadowBlur = 28;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3 - Math.PI / 6;
+            const px = Math.cos(a) * r;
+            const py = Math.sin(a) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.strokeStyle = 'rgba(254, 240, 138, 0.72)';
+          ctx.lineWidth = 1.8;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = (i * Math.PI) / 3 - Math.PI / 6;
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(a) * r * 0.88, Math.sin(a) * r * 0.88);
+          }
+          ctx.stroke();
+
+          // Brasas ricocheteando na barreira flamejante
+          for (let s = 0; s < 10; s++) {
+            const a = (s / 10) * Math.PI * 2 + sec * 2.1;
+            const d = r + 6 + p * 34;
+            ctx.fillStyle = s % 2 === 0 ? '#fef08a' : '#fb923c';
+            ctx.beginPath();
+            ctx.arc(Math.cos(a) * d, Math.sin(a) * d, 3.4 * (1 - p * 0.5), 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.restore();
+          drawBadge(
+            tx,
+            ty - r - 22,
+            vfx.label || '🔥🛡️ BARREIRA MÁGICA · VILMA IMUNE A FOGO!',
+            '#f97316',
+            '#fef3c7',
+            masterAlpha
+          );
+          break;
+        }
+
+        // 62. MAGO UHR: Animação mágica arcana nele mesmo ao comprar a carta extra
+        case 'mago_uhr_draw_arcana': {
+          const cx = src.x;
+          const cy = src.y;
+          const pulse = Math.sin(p * Math.PI);
+          ctx.save();
+          ctx.globalAlpha = masterAlpha;
+
+          // Brilho arcano violeta-dourado envolvendo o próprio Mago Uhr
+          const auraG = ctx.createRadialGradient(cx, cy, 6, cx, cy, 86);
+          auraG.addColorStop(0, 'rgba(255, 255, 255, 0.88)');
+          auraG.addColorStop(0.35, 'rgba(167, 139, 250, 0.65)');
+          auraG.addColorStop(0.75, 'rgba(251, 191, 36, 0.28)');
+          auraG.addColorStop(1, 'transparent');
+          ctx.fillStyle = auraG;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 86, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Círculo mágico arcano girando sobre Mago Uhr
+          drawDivineMandala(cx, cy, 52 + pulse * 14, sec * 3.4, '#c084fc', '#fde047', masterAlpha * 0.92);
+
+          // 6 páginas/cartas luminosas etéreas emergindo em espiral ao redor dele
+          for (let pg = 0; pg < 6; pg++) {
+            const ang = (pg / 6) * Math.PI * 2 + sec * 2.6;
+            const dist = 28 + pulse * 26;
+            const px = cx + Math.cos(ang) * dist;
+            const py = cy + Math.sin(ang) * dist * 0.7 - p * 34;
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(ang + Math.PI / 2);
+            ctx.fillStyle = pg % 2 === 0 ? 'rgba(254, 240, 138, 0.9)' : 'rgba(196, 181, 253, 0.9)';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.2;
+            ctx.shadowColor = '#a855f7';
+            ctx.shadowBlur = 12;
+            ctx.fillRect(-5, -7, 10, 14);
+            ctx.strokeRect(-5, -7, 10, 14);
+            ctx.restore();
+          }
+
+          ctx.restore();
+          drawBadge(
+            cx,
+            cy - 88,
+            vfx.label || '🧙‍♂️✨ MAGO UHR · COMPRA ARCANA EXTRA!',
+            '#c084fc',
+            '#fef3c7',
+            masterAlpha
+          );
+          break;
+        }
+
+        // 63. GOUGH: Forja estática ao gerar a Flecha Elétrica
+        case 'gough_arrow_forge': {
+          const cx = src.x;
+          const cy = src.y;
+          ctx.save();
+          ctx.globalAlpha = masterAlpha;
+          const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 74);
+          g.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+          g.addColorStop(0.4, 'rgba(34, 211, 238, 0.6)');
+          g.addColorStop(0.8, 'rgba(250, 204, 21, 0.25)');
+          g.addColorStop(1, 'transparent');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 74, 0, Math.PI * 2);
+          ctx.fill();
+
+          for (let b = 0; b < 6; b++) {
+            const ang = (b / 6) * Math.PI * 2 + sec * 5;
+            drawBolt(cx, cy, cx + Math.cos(ang) * 52, cy + Math.sin(ang) * 52, b % 2 === 0 ? '#22d3ee' : '#fde047', 2.4, masterAlpha, sec + b);
+          }
+          ctx.restore();
+          drawBadge(cx, cy - 86, vfx.label || '🏹⚡ GOUGH · FLECHA ELÉTRICA FORJADA!', '#22d3ee', '#ecfeff', masterAlpha);
           break;
         }
       }

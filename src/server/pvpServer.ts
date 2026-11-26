@@ -3,6 +3,12 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAuthToken } from '../middleware/auth.ts';
 import { getPlayerStateByUidOrEmail } from '../db/playerRepository.ts';
 import { DEFAULT_AVATAR_ID } from '../data/avatars.ts';
+import {
+  DEFAULT_CARD_BACK_ID,
+  DEFAULT_PLAYMAT_ID,
+  type CardBackId,
+  type PlaymatId,
+} from '../data/economy.ts';
 import { getRankInfo, type RankPolicyConfig, type RankTier } from '../utils/rankMath.ts';
 import {
   buildDeckFromTemplateIds,
@@ -33,10 +39,15 @@ interface ConnectedClient {
   nickname: string;
   level: number;
   rankPoints: number;
+  hasPlayedRanked: boolean;
   rankTier: string;
   avatarId: string;
+  equippedPlaymat: PlaymatId;
+  equippedCardBack: CardBackId;
   rankBlockedTotal: boolean;
   rankBlockFromTier: RankTier | null;
+  tutorialRewardClaimed: boolean;
+  isAdmin: boolean;
   roomCode: string | null;
 }
 
@@ -99,12 +110,14 @@ function computeEffectiveRankLabel(
   points: number,
   policy: RankPolicyConfig | undefined,
   playerBlockedTotal: boolean,
-  playerBlockedFromTier: RankTier | null
+  playerBlockedFromTier: RankTier | null,
+  hasPlayedRanked: boolean
 ): string {
   return getRankInfo(points, {
     globalBlockedFromTier: policy?.blockedFromTier ?? null,
     playerBlockedTotal,
     playerBlockedFromTier,
+    hasPlayedRanked,
   }).label;
 }
 
@@ -334,7 +347,20 @@ export function setupPvpWebSocketServer(
   httpServer: HttpServer,
   hooks?: PvpServerHooks
 ) {
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws/pvp' });
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on('upgrade', (request, socket, head) => {
+    try {
+      const pathname = new URL(request.url || '/', 'http://localhost').pathname;
+      if (pathname === '/ws/pvp') {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit('connection', ws, request);
+        });
+      }
+    } catch {
+      // Ignore non-PvP upgrade requests so other upgrade handlers (e.g. Vite HMR) can process them
+    }
+  });
 
   const clientsByWs = new Map<WebSocket, ConnectedClient>();
   const rooms = new Map<string, ServerPvpRoom>();
@@ -363,6 +389,8 @@ export function setupPvpWebSocketServer(
     rankPoints: p.rankPoints,
     rankTier: p.rankTier,
     avatarId: p.avatarId,
+    equippedPlaymat: p.equippedPlaymat || DEFAULT_PLAYMAT_ID,
+    equippedCardBack: p.equippedCardBack || DEFAULT_CARD_BACK_ID,
     deckName: p.deckName,
     deckCardIds: p.deckCardIds,
     ready: p.ready,
@@ -687,6 +715,7 @@ export function setupPvpWebSocketServer(
       borRevivedOnce: false,
       zaelUsed: false,
       purpleExtraHpSlots: 0,
+      finnFairyHpSlots: 0,
     };
 
     const guestPlayer: SerializedPlayerState = {
@@ -707,6 +736,7 @@ export function setupPvpWebSocketServer(
       borRevivedOnce: false,
       zaelUsed: false,
       purpleExtraHpSlots: 0,
+      finnFairyHpSlots: 0,
     };
 
     return {
@@ -764,6 +794,8 @@ export function setupPvpWebSocketServer(
       opponentRank: remoteP.rankTier,
       opponentLevel: remoteP.level,
       opponentAvatarId: remoteP.avatarId,
+      opponentPlaymat: remoteP.equippedPlaymat || DEFAULT_PLAYMAT_ID,
+      opponentCardBack: remoteP.equippedCardBack || DEFAULT_CARD_BACK_ID,
       initialSnapshot: sanitizeStateForViewer(room.matchState!, seat),
     };
   };
@@ -783,14 +815,20 @@ export function setupPvpWebSocketServer(
     const nickname = dbState?.nickname || authUser.nickname || 'Duelista';
     const level = dbState?.level ?? 1;
     const rankPoints = dbState?.rankPoints ?? 0;
+    const hasPlayedRanked = (dbState?.rankedMatchesPlayed ?? 0) > 0;
     const avatarId = dbState?.avatarId || DEFAULT_AVATAR_ID;
+    const equippedPlaymat: PlaymatId = (dbState?.equippedPlaymat as PlaymatId) || DEFAULT_PLAYMAT_ID;
+    const equippedCardBack: CardBackId = (dbState?.equippedCardBack as CardBackId) || DEFAULT_CARD_BACK_ID;
     const rankBlockedTotal = Boolean(dbState?.rankBlockedTotal);
     const rankBlockFromTier = dbState?.rankBlockFromTier ?? null;
+    const tutorialRewardClaimed = Boolean(dbState?.tutorialRewardClaimed);
+    const isAdmin = Boolean(dbState?.isAdmin);
     const rankTier = computeEffectiveRankLabel(
       rankPoints,
       hooks?.getRankPolicy?.(),
       rankBlockedTotal,
-      rankBlockFromTier
+      rankBlockFromTier,
+      hasPlayedRanked
     );
 
     // Close duplicate active sockets for same uid cleanly (without forfeiting active room)
@@ -813,10 +851,15 @@ export function setupPvpWebSocketServer(
       nickname,
       level,
       rankPoints,
+      hasPlayedRanked,
       rankTier,
       avatarId,
+      equippedPlaymat,
+      equippedCardBack,
       rankBlockedTotal,
       rankBlockFromTier,
+      tutorialRewardClaimed,
+      isAdmin,
       roomCode: null,
     };
     clientsByWs.set(ws, client);
@@ -946,6 +989,27 @@ export function setupPvpWebSocketServer(
         case 'CREATE_ROOM': {
           const matchType: PvpMatchType =
             msg.matchType === 'ranked' ? 'ranked' : 'normal';
+          const freshDb = await getPlayerStateByUidOrEmail(client.uid, client.email).catch(() => null);
+          if (freshDb) {
+            client.level = freshDb.level;
+            client.rankPoints = freshDb.rankPoints;
+            client.hasPlayedRanked = (freshDb.rankedMatchesPlayed ?? 0) > 0;
+            client.tutorialRewardClaimed = Boolean(freshDb.tutorialRewardClaimed);
+            client.isAdmin = Boolean(freshDb.isAdmin);
+            client.rankBlockedTotal = Boolean(freshDb.rankBlockedTotal);
+            client.rankBlockFromTier = freshDb.rankBlockFromTier ?? null;
+            client.avatarId = freshDb.avatarId || client.avatarId;
+            client.equippedPlaymat = (freshDb.equippedPlaymat as PlaymatId) || DEFAULT_PLAYMAT_ID;
+            client.equippedCardBack = (freshDb.equippedCardBack as CardBackId) || DEFAULT_CARD_BACK_ID;
+          }
+          if (!client.isAdmin && (!client.tutorialRewardClaimed || client.level < 2)) {
+            sendToWs(ws, {
+              type: 'PVP_ERROR',
+              message:
+                'O modo PvP só é liberado após concluir o Tutorial e atingir o Nível 2 de conta jogando PvIA.',
+            });
+            return;
+          }
           const queueStatus = hooks?.isQueueEnabled?.(matchType);
           if (queueStatus && !queueStatus.enabled) {
             sendToWs(ws, {
@@ -971,7 +1035,8 @@ export function setupPvpWebSocketServer(
             client.rankPoints,
             hooks?.getRankPolicy?.(),
             client.rankBlockedTotal,
-            client.rankBlockFromTier
+            client.rankBlockFromTier,
+            client.hasPlayedRanked
           );
           client.rankTier = freshRankTier;
 
@@ -988,6 +1053,8 @@ export function setupPvpWebSocketServer(
               rankPoints: client.rankPoints,
               rankTier: freshRankTier,
               avatarId: client.avatarId,
+              equippedPlaymat: client.equippedPlaymat,
+              equippedCardBack: client.equippedCardBack,
               deckName:
                 typeof msg.deckName === 'string' && msg.deckName.trim()
                   ? msg.deckName.trim()
@@ -1066,6 +1133,28 @@ export function setupPvpWebSocketServer(
             return;
           }
 
+          const freshJoinDb = await getPlayerStateByUidOrEmail(client.uid, client.email).catch(() => null);
+          if (freshJoinDb) {
+            client.level = freshJoinDb.level;
+            client.rankPoints = freshJoinDb.rankPoints;
+            client.hasPlayedRanked = (freshJoinDb.rankedMatchesPlayed ?? 0) > 0;
+            client.tutorialRewardClaimed = Boolean(freshJoinDb.tutorialRewardClaimed);
+            client.isAdmin = Boolean(freshJoinDb.isAdmin);
+            client.rankBlockedTotal = Boolean(freshJoinDb.rankBlockedTotal);
+            client.rankBlockFromTier = freshJoinDb.rankBlockFromTier ?? null;
+            client.avatarId = freshJoinDb.avatarId || client.avatarId;
+            client.equippedPlaymat = (freshJoinDb.equippedPlaymat as PlaymatId) || DEFAULT_PLAYMAT_ID;
+            client.equippedCardBack = (freshJoinDb.equippedCardBack as CardBackId) || DEFAULT_CARD_BACK_ID;
+          }
+          if (!client.isAdmin && (!client.tutorialRewardClaimed || client.level < 2)) {
+            sendToWs(ws, {
+              type: 'PVP_ERROR',
+              message:
+                'O modo PvP só é liberado após concluir o Tutorial e atingir o Nível 2 de conta jogando PvIA.',
+            });
+            return;
+          }
+
           removeClientFromCurrentRoom(client, 'left');
           const deckIds =
             Array.isArray(msg.deckCardIds) && msg.deckCardIds.length === 20
@@ -1076,7 +1165,8 @@ export function setupPvpWebSocketServer(
             client.rankPoints,
             hooks?.getRankPolicy?.(),
             client.rankBlockedTotal,
-            client.rankBlockFromTier
+            client.rankBlockFromTier,
+            client.hasPlayedRanked
           );
           client.rankTier = guestRankTier;
 
@@ -1087,6 +1177,8 @@ export function setupPvpWebSocketServer(
             rankPoints: client.rankPoints,
             rankTier: guestRankTier,
             avatarId: client.avatarId,
+            equippedPlaymat: client.equippedPlaymat,
+            equippedCardBack: client.equippedCardBack,
             deckName:
               typeof msg.deckName === 'string' && msg.deckName.trim()
                 ? msg.deckName.trim()

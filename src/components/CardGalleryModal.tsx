@@ -521,7 +521,7 @@ export const CardGalleryModal: React.FC<CardGalleryModalProps> = ({
                     ? '⚜️ Divino'
                     : elem === 'Sombrio'
                     ? '🌑 Sombrio'
-                    : '⚔️ Neutro'}
+                    : '🧭 Neutro'}
                 </button>
               ))}
             </div>

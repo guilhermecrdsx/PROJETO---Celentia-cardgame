@@ -155,7 +155,7 @@ export const ELEMENT_CONFIG: Record<
     textBadge: 'text-slate-300',
     border: 'border-slate-500/50',
     glow: 'rgba(148, 163, 184, 0.3)',
-    icon: '⚔️',
+    icon: '🧭',
     strongVs: 'Estabilidade Pura (Dano = Ataque, Resistência = Vida + Defesa)',
     weakVs: 'Sem bônus elemental',
   },
@@ -813,7 +813,7 @@ export function getThematicCardArt(templateId: string, element: ElementType, isS
     };
   }
   return {
-    icon: isSkill ? '📜' : cfg.icon || '⚔️',
+    icon: isSkill ? '📜' : cfg.icon || '🧭',
     secondaryRune: cfg.icon || '✨',
     backdropClass: 'from-slate-800/95 via-slate-900/95 to-black',
     ringColor: cfg.border,

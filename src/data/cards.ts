@@ -413,7 +413,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     power: 29,
     isFairy: true,
     effectDescription:
-      'Causa o DOBRO de dano à vida do jogador inimigo ao atingir diretamente ou com Bravura.\nPassiva: Corte das Fadas.',
+      'Causa o DOBRO de dano à vida do jogador inimigo ao atingir diretamente ou com Bravura.',
   },
   {
     id: 'g_salazar',
@@ -430,7 +430,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     exclusiveName: 'Brasa Entorpecente',
     conditionPill: 'torpor',
     effectDescription:
-      'Ao ser invocado causa Torpor em dois inimigos a escolha por 1 rodada.\nPassiva: Corte das Fadas.',
+      'Ao ser invocado causa Torpor em dois inimigos a escolha por 1 rodada.',
   },
   {
     id: 'g_guadan',
@@ -462,7 +462,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     exclusiveName: 'Escudo Boreal',
     conditionPill: 'barreira',
     effectDescription:
-      'Ao ser invocada selecione um aliado, ou si mesma, para receber BARREIRA. A barreira fica ativa até que seja quebrada.\nPassiva: Corte das Fadas.',
+      'Ao ser invocada selecione um aliado, ou si mesma, para receber BARREIRA. A barreira fica ativa até que seja quebrada.',
   },
   {
     id: 'g_voto_do_silencio',
@@ -796,7 +796,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     isFairy: true,
     conditionPill: 'furtivo',
     effectDescription:
-      'Ao ser invocado recebe FURTIVIDADE por 1 rodada. A PRIMEIRA VEZ que Finn atacar a vida do jogador inimigo aumenta +1 da vida máxima do jogador aliado.\nPassiva: Corte das Fadas.',
+      'Ao ser invocado recebe FURTIVIDADE por 1 rodada. A PRIMEIRA VEZ que Finn atacar a vida do jogador inimigo aumenta permanentemente +1 à Vida Máxima e concede +1 de Vida atual ao jogador aliado.',
   },
   {
     id: 'm_tor',
@@ -916,7 +916,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     isFairy: true,
     exclusiveName: 'Furto Feérico',
     conditionPill: 'capturar',
-    effectDescription: 'Ao ser invocada Bia CAPTURA uma carta aleatória do baralho inimigo.\nPassiva: Corte das Fadas.',
+    effectDescription: 'Ao ser invocada Bia CAPTURA uma carta aleatória do baralho inimigo.',
   },
   {
     id: 'm_estatico',
@@ -1261,7 +1261,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     exclusiveName: 'Néctar Corrosivo',
     conditionPill: 'corrosao',
     effectDescription:
-      'Ao ser invocada recebe Furtivo. Além disso selecione 2 inimigos para receberem Corrosão por 2 rodadas.\nPassiva: Corte das Fadas.',
+      'Ao ser invocada recebe Furtivo. Além disso selecione 2 inimigos para receberem Corrosão por 2 rodadas.',
   },
 
   // Special Fusion unit (Tor + Men + Tador)
@@ -1298,7 +1298,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     conditionPill: 'furtivo',
     levelUpRequirement: '2+ unidades furtivas atacarem juntas com Licia.',
     effectDescription:
-      'Licia recebe Furtivo se houver outra unidade Furtiva na mesa simultaneamente.\nPassiva: Corte das Fadas.\nRequisito para subir de nível: 2+ unidades furtivas atacarem juntas com Licia.\nEfeito EXTRA de nível 2: Ao subir de nível, compartilha seu valor de PODER atual e entrega Furtivo a todos os aliados na mesa. Concede +10 de PODER a todas as unidades furtivas a cada nova rodada e recebe o efeito de condição exclusivo ETÉREO (só pode ser defendida por outra unidade ETÉREA).',
+      'Licia recebe Furtivo se houver outra unidade Furtiva na mesa simultaneamente.\nRequisito para subir de nível: 2+ unidades furtivas atacarem juntas com Licia.\nEfeito EXTRA de nível 2: Ao subir de nível, compartilha seu valor de PODER atual e entrega Furtivo a todos os aliados na mesa. Concede +10 de PODER a todas as unidades furtivas a cada nova rodada e recebe o efeito de condição exclusivo ETÉREO (só pode ser defendida por outra unidade ETÉREA).',
   },
   {
     id: 'm_titano',
@@ -1379,7 +1379,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     isFairy: true,
     conditionPill: 'cura',
     effectDescription:
-      'Ao ser invocada Cristalys cura 6 de vida de um aliado a escolha. A cura se aplica apenas a vida.\nPassiva: Corte das Fadas.',
+      'Ao ser invocada selecione uma unidade aliada, ou si mesma, para receber CURA por 2 rodadas (ativa instantaneamente ao ser aplicada).',
   },
   {
     id: 'n_fernando',
@@ -1521,7 +1521,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     power: 12,
     isFairy: true,
     effectDescription:
-      'Toda unidade ELÉTRICA invocada na mesa aliada em toda partida soma +1 ao Poder de Xury.\nPassiva: Corte das Fadas.',
+      'Toda unidade ELÉTRICA invocada na mesa aliada em toda partida soma +1 ao Poder de Xury.',
   },
   {
     id: 'n_destreza',
@@ -1914,7 +1914,7 @@ export const CARD_TEMPLATES: CardTemplate[] = [
     power: 28,
     isFairy: true,
     exclusiveName: 'Gerador Estelar',
-    effectDescription: 'A cada rodada gera uma Fagulha Estelar.\nPassiva: Corte das Fadas.',
+    effectDescription: 'A cada rodada gera uma Fagulha Estelar.',
   },
   {
     id: 'token_fagulha_estelar',

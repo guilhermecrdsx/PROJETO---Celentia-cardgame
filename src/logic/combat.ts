@@ -638,6 +638,7 @@ export function isArchangelCard(c: CardInstance): boolean {
     c.name.toLowerCase().includes('pólus') ||
     c.name.toLowerCase().includes('torvyx') ||
     c.name.toLowerCase().includes('fanx') ||
+    c.name.toLowerCase().includes('fanael') ||
     c.name.toLowerCase().includes('kaliel') ||
     c.name.toLowerCase().includes('faleziel')
   );
@@ -1975,6 +1976,24 @@ export function resolveCombatPair(
       defender.silencedRounds === 0
   );
 
+  const elementalImmunityTriggers: Array<{
+    targetId: string;
+    element: 'Gelo' | 'Fogo';
+    side: 'attacker' | 'defender';
+  }> = [];
+  if (isDefenderVilmaImmuneToFire) {
+    elementalImmunityTriggers.push({ targetId: defender.instanceId, element: 'Fogo', side: 'defender' });
+  }
+  if (isDefenderCeliaImmuneToIce) {
+    elementalImmunityTriggers.push({ targetId: defender.instanceId, element: 'Gelo', side: 'defender' });
+  }
+  if (isAttackerVilmaImmuneToFire) {
+    elementalImmunityTriggers.push({ targetId: attacker.instanceId, element: 'Fogo', side: 'attacker' });
+  }
+  if (isAttackerCeliaImmuneToIce) {
+    elementalImmunityTriggers.push({ targetId: attacker.instanceId, element: 'Gelo', side: 'attacker' });
+  }
+
   return {
     attackerName: attacker.name,
     defenderName: defender.name,
@@ -2023,6 +2042,8 @@ export function resolveCombatPair(
         : titanoDefenderBleedHeal
         ? 'defender'
         : undefined,
+    elementalImmunityTriggers:
+      elementalImmunityTriggers.length > 0 ? elementalImmunityTriggers : undefined,
     description: desc,
   };
 }
@@ -2033,19 +2054,24 @@ export function triggerKarloExplosion(
   karlo: CardInstance,
   enemyBoard: CardInstance[],
   votoSilencioActive: boolean = false
-): { damageDealt: number; killedNames: string[] } {
+): { damageDealt: number; killedNames: string[]; blockedVilmaIds: string[] } {
   if (karlo.templateId !== 'g_karlo' || karlo.silencedRounds > 0) {
-    return { damageDealt: 0, killedNames: [] };
+    return { damageDealt: 0, killedNames: [], blockedVilmaIds: [] };
   }
   const explosionDamage = getEffectivePower(karlo, votoSilencioActive);
-  if (explosionDamage <= 0) return { damageDealt: 0, killedNames: [] };
+  if (explosionDamage <= 0) return { damageDealt: 0, killedNames: [], blockedVilmaIds: [] };
 
   const killedNames: string[] = [];
+  const blockedVilmaIds: string[] = [];
   for (const enemy of enemyBoard) {
     const isVilmaImmune =
       (enemy.templateId === 'm_vilma' || enemy.name.toLowerCase().includes('vilma')) &&
       enemy.silencedRounds === 0;
-    if (enemy.hp <= 0 || isOSolLevel2Immortal(enemy) || isVilmaImmune) continue;
+    if (enemy.hp <= 0 || isOSolLevel2Immortal(enemy)) continue;
+    if (isVilmaImmune) {
+      blockedVilmaIds.push(enemy.instanceId);
+      continue;
+    }
     const defAbsorbed = Math.min(enemy.def, explosionDamage);
     enemy.def -= defAbsorbed;
     const hpDmg = explosionDamage - defAbsorbed;
@@ -2055,7 +2081,7 @@ export function triggerKarloExplosion(
     }
   }
 
-  return { damageDealt: explosionDamage, killedNames };
+  return { damageDealt: explosionDamage, killedNames, blockedVilmaIds };
 }
 
 // Kore death trigger:
@@ -2063,12 +2089,13 @@ export function triggerKarloExplosion(
 export function triggerKoreDeath(
   kore: CardInstance,
   enemyBoard: CardInstance[]
-): { damageDealt: number; killedNames: string[] } {
+): { damageDealt: number; killedNames: string[]; blockedCeliaIds: string[] } {
   if (kore.templateId !== 'm_kore' || kore.silencedRounds > 0) {
-    return { damageDealt: 0, killedNames: [] };
+    return { damageDealt: 0, killedNames: [], blockedCeliaIds: [] };
   }
   const freezeDamage = Math.max(Math.round((kore.baseDef || 10) * 0.75), Math.round(kore.def * 0.75));
   const killedNames: string[] = [];
+  const blockedCeliaIds: string[] = [];
 
   for (const enemy of enemyBoard) {
     const isCeliaImmune =
@@ -2076,7 +2103,11 @@ export function triggerKoreDeath(
         enemy.name.toLowerCase().includes('celia') ||
         enemy.name.toLowerCase().includes('célia')) &&
       enemy.silencedRounds === 0;
-    if (enemy.hp <= 0 || isOSolLevel2Immortal(enemy) || isCeliaImmune) continue;
+    if (enemy.hp <= 0 || isOSolLevel2Immortal(enemy)) continue;
+    if (isCeliaImmune) {
+      blockedCeliaIds.push(enemy.instanceId);
+      continue;
+    }
     if (!enemy.conditions.has('imunidade')) {
       enemy.conditions.add('congelado');
       setCardConditionSource(enemy, 'congelado', 'unidade_inimiga', kore.name);
@@ -2093,7 +2124,7 @@ export function triggerKoreDeath(
     }
   }
 
-  return { damageDealt: freezeDamage, killedNames };
+  return { damageDealt: freezeDamage, killedNames, blockedCeliaIds };
 }
 
 // Nova Curva de Liberação de Tiers por Rodada:

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Coins,
   Crown,
+  Gem,
   Gift,
   Layers,
   Lock,
@@ -89,6 +90,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   // Editable fields for selected user
   const [editNick, setEditNick] = useState('');
   const [editGold, setEditGold] = useState('0');
+  const [editCrystals, setEditCrystals] = useState('0');
   const [editLevel, setEditLevel] = useState('1');
   const [editXp, setEditXp] = useState('0');
   const [editRp, setEditRp] = useState('0');
@@ -113,6 +115,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   const [grantXpInput, setGrantXpInput] = useState('500');
   const [grantRpInput, setGrantRpInput] = useState('100');
   const [grantGoldInput, setGrantGoldInput] = useState('250');
+  const [grantCrystalsInput, setGrantCrystalsInput] = useState('500');
 
   const [userFeedback, setUserFeedback] = useState<{
     type: 'success' | 'error';
@@ -186,6 +189,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     if (!selectedUser) return;
     setEditNick(formatHandleDisplay(selectedUser.nickname));
     setEditGold(String(selectedUser.gold));
+    setEditCrystals(String(selectedUser.crystals ?? 0));
     setEditLevel(String(selectedUser.level));
     setEditXp(String(selectedUser.xp));
     setEditRp(String(selectedUser.rankPoints));
@@ -341,6 +345,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       const updated = await adminUpdateUserInCloud(selectedUser.uid, {
         nickname: nickCheck.normalized,
         gold: Number(editGold),
+        crystals: Number(editCrystals),
         level: Math.min(MAX_ACCOUNT_LEVEL, Math.max(1, Number(editLevel) || 1)),
         xp: Number(editXp),
         rankPoints: Number(editRp),
@@ -370,6 +375,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       | 'grant_event_classes'
       | 'reset_starter_cards'
       | 'add_gold_5000'
+      | 'add_crystals_5000'
+      | 'unlock_all_cosmetics'
       | 'max_level_rank',
     successLabel: string
   ) => {
@@ -450,6 +457,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     const addXp = Math.max(0, Math.floor(Number(grantXpInput) || 0));
     const addRankPoints = Math.floor(Number(grantRpInput) || 0);
     const addGold = Math.floor(Number(grantGoldInput) || 0);
+    const addCrystals = Math.floor(Number(grantCrystalsInput) || 0);
 
     try {
       setSavingUser(true);
@@ -458,6 +466,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         addXp,
         addRankPoints,
         addGold,
+        addCrystals,
       });
       sound.playSpell();
       syncUpdatedUser(res.user);
@@ -467,7 +476,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           : '';
       setUserFeedback({
         type: 'success',
-        text: `Entregue a ${res.user.nickname}: +${res.xpAdded} XP (Nv.${res.newLevel}), ${res.rpAdded >= 0 ? `+${res.rpAdded}` : res.rpAdded} RP, +${res.goldAdded} Ouro${milestoneNote}`,
+        text: `Entregue a ${res.user.nickname}: +${res.xpAdded} XP (Nv.${res.newLevel}), ${res.rpAdded >= 0 ? `+${res.rpAdded}` : res.rpAdded} RP, ${res.crystalsAdded >= 0 ? `+${res.crystalsAdded}` : res.crystalsAdded} Cristais, ${res.goldAdded >= 0 ? `+${res.goldAdded}` : res.goldAdded} Ouro${milestoneNote}`,
       });
     } catch (err: any) {
       setUserFeedback({
@@ -640,7 +649,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                 >
                   {liveRankPolicy.blockedFromTier
                     ? `TRAVADO ANTES DE ${liveRankPolicy.blockedFromTier.toUpperCase()}`
-                    : 'PROGRESSÃO LIBERADA ATÉ CELESTIAL I'}
+                    : 'PROGRESSÃO LIBERADA ATÉ CELESTIAL'}
                 </span>
               </div>
 
@@ -654,7 +663,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     onChange={(e) => setDraftGlobalBlockTier(e.target.value as RankTier | '')}
                     className="w-full px-3 py-2.5 rounded-xl bg-stone-950 border border-stone-700 focus:border-amber-400 text-sm font-mono text-amber-100 focus:outline-none"
                   >
-                    <option value="">Sem Bloqueio Global (Liberado até Celestial I)</option>
+                    <option value="">Sem Bloqueio Global (Liberado até Celestial)</option>
                     {RANK_TIER_ORDER.map((tier) => (
                       <option key={tier} value={tier}>
                         Bloquear a partir de {tier}
@@ -856,6 +865,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       globalBlockedFromTier: liveRankPolicy.blockedFromTier,
                       playerBlockedTotal: u.rankBlockedTotal,
                       playerBlockedFromTier: u.rankBlockFromTier,
+                      hasPlayedRanked: (u.rankedMatchesPlayed ?? 0) > 0,
                     });
                     return (
                       <button
@@ -891,10 +901,12 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             <p className="text-[11px] font-mono text-stone-400 truncate">
                               {u.email}
                             </p>
-                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-mono text-stone-400">
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-mono text-stone-400 flex-wrap">
                               <span className="text-cyan-300 font-bold">Nv.{u.level}</span>
                               <span>·</span>
                               <span className="text-amber-300">{rank.label} ({u.rankPoints} RP)</span>
+                              <span>·</span>
+                              <span className="text-cyan-200">💎 {u.crystals ?? 0}</span>
                               <span>·</span>
                               <span className="text-yellow-300">🪙 {u.gold}</span>
                             </div>
@@ -933,6 +945,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       globalBlockedFromTier: liveRankPolicy.blockedFromTier,
                       playerBlockedTotal: selectedUser.rankBlockedTotal,
                       playerBlockedFromTier: selectedUser.rankBlockFromTier,
+                      hasPlayedRanked: (selectedUser.rankedMatchesPlayed ?? 0) > 0,
                     });
                     return (
                       <div className="p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-[#121626] to-stone-900 border border-stone-700 flex flex-wrap items-center justify-between gap-3">
@@ -1041,7 +1054,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                           const hasAv = av.isFree || selectedUser.unlockedAvatarIds.includes(av.id);
                           return (
                             <option key={av.id} value={av.id}>
-                              {av.name} ({av.isFree ? 'Gratuito' : `${av.cost}g`}){hasAv ? ' [LIBERADO]' : ''}
+                              {av.name} ({av.isFree ? 'Padrão' : `${av.crystalCost}💎 / ${av.cost}g`}){hasAv ? ' [LIBERADO]' : ''}
                             </option>
                           );
                         })}
@@ -1066,16 +1079,16 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     </div>
                   </div>
 
-                  {/* 2. Grant Incremental XP, Rank Points & Gold */}
+                  {/* 2. Grant Incremental XP, Rank Points, Crystals & Gold */}
                   <form
                     onSubmit={handleGrantResources}
                     className="p-4 rounded-2xl bg-stone-900/80 border border-cyan-500/40 space-y-3"
                   >
                     <h4 className="text-xs font-serif font-black uppercase tracking-widest text-cyan-300 flex items-center gap-1.5">
                       <Coins size={14} />
-                      <span>Entregar XP de Nível, Pontos de Rank e Ouro</span>
+                      <span>Entregar XP, RP, Cristais e Ouro</span>
                     </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end">
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 items-end">
                       <div>
                         <label className="block text-[10px] font-mono text-stone-400 mb-1">
                           +XP de Nível
@@ -1091,7 +1104,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                       </div>
                       <div>
                         <label className="block text-[10px] font-mono text-stone-400 mb-1">
-                          +Pontos de Rank (RP)
+                          +Rank (RP)
                         </label>
                         <input
                           type="number"
@@ -1100,6 +1113,19 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                           value={grantRpInput}
                           onChange={(e) => setGrantRpInput(e.target.value)}
                           className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs font-mono text-amber-200 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-mono text-stone-400 mb-1">
+                          +Cristais
+                        </label>
+                        <input
+                          type="number"
+                          min={-100000}
+                          max={1000000}
+                          value={grantCrystalsInput}
+                          onChange={(e) => setGrantCrystalsInput(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 text-xs font-mono text-cyan-200 focus:outline-none"
                         />
                       </div>
                       <div>
@@ -1164,6 +1190,21 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                           <option value="sol">Sol</option>
                           <option value="lua">Lua</option>
                         </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-mono text-stone-400 mb-1 flex items-center gap-1">
+                          <Gem size={12} className="text-cyan-300" />
+                          <span>Cristais</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={9999999}
+                          value={editCrystals}
+                          onChange={(e) => setEditCrystals(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-700 focus:border-cyan-400 text-sm font-mono text-cyan-200 focus:outline-none"
+                        />
                       </div>
 
                       <div>
@@ -1316,14 +1357,37 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         type="button"
                         disabled={savingUser}
                         onClick={() =>
+                          handleTargetUserAction('add_crystals_5000', '+5.000 Cristais creditados!')
+                        }
+                        className="py-2 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-400 text-cyan-200 hover:text-stone-950 border border-cyan-400/50 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        +5.000 Cristais
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingUser}
+                        onClick={() =>
                           handleTargetUserAction(
-                            'max_level_rank',
-                            'Promovido para Nv.50 & Celestial I!'
+                            'unlock_all_cosmetics',
+                            'Todos os tapetes, versos e avatares desbloqueados!'
                           )
                         }
-                        className="py-2 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500 text-cyan-200 hover:text-stone-950 border border-cyan-400/50 transition-all cursor-pointer disabled:opacity-50"
+                        className="py-2 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-400 text-emerald-200 hover:text-stone-950 border border-emerald-400/50 transition-all cursor-pointer disabled:opacity-50"
                       >
-                        Nv.50 & Celestial I
+                        Liberar Todos Cosméticos
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingUser}
+                        onClick={() =>
+                          handleTargetUserAction(
+                            'max_level_rank',
+                            'Promovido para Nv.50 & Celestial!'
+                          )
+                        }
+                        className="py-2 px-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-400 text-indigo-200 hover:text-stone-950 border border-indigo-400/50 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        Nv.50 & Celestial
                       </button>
                       <button
                         type="button"

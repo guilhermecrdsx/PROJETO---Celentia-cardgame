@@ -20,6 +20,7 @@ import {
   PackageOpen,
   Frame,
   EyeOff,
+  Lock,
 } from 'lucide-react';
 import {
   useVisualPreferences,
@@ -30,6 +31,17 @@ import {
   ChestAnimationMode,
 } from '../utils/visualTheme';
 import { sound } from '../services/soundEffects';
+import { useCloudPlayerState, syncProfileToCloud } from '../services/accountApi';
+import {
+  FREE_PLAYMAT_IDS,
+  FREE_CARD_BACK_IDS,
+  getPlaymatPrice,
+  getCardBackPrice,
+  type PlaymatId,
+  type CardBackId,
+} from '../data/economy';
+import { ArenaPlaymatBackdrop } from './ArenaPlaymatBackdrop';
+import { CardBackArt } from './CardBackArt';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -76,9 +88,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     applyFullPreset,
   } = useVisualPreferences();
 
+  const { playerState } = useCloudPlayerState();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [isMuted, setIsMuted] = useState(() => sound.getMuted());
   const [volume, setVolume] = useState(() => sound.getVolume());
+
+  const unlockedPlaymatSet = new Set<PlaymatId>([
+    ...FREE_PLAYMAT_IDS,
+    ...(playerState?.unlockedPlaymats || []),
+  ]);
+  const unlockedCardBackSet = new Set<CardBackId>([
+    ...FREE_CARD_BACK_IDS,
+    ...(playerState?.unlockedCardBacks || []),
+  ]);
+  const activePlaymat = playerState?.equippedPlaymat || playmat;
+  const activeCardBack = playerState?.equippedCardBack || cardBack;
 
   useEffect(() => {
     if (isOpen) {
@@ -842,6 +866,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 4: TEMAS (Tapetes de Mesa & Versos de Carta) */}
           {activeTab === 'themes' && (
             <div className="space-y-5 animate-in fade-in duration-150">
+              <div className="p-2.5 rounded-xl bg-stone-900/75 border border-stone-800 text-[11px] text-stone-400">
+                Apenas tapetes e versos já adquiridos podem ser equipados aqui. Para desbloquear novos temas com Cristais ou Ouro, acesse a <strong className="text-amber-300">Loja → Temas</strong>.
+              </div>
+
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-serif font-black text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -849,36 +877,66 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Tapete de Batalha (Playmat)
                   </h3>
                   <span className="text-[10px] text-stone-400 font-mono">
-                    {PLAYMAT_OPTIONS.find((p) => p.id === playmat)?.name}
+                    {PLAYMAT_OPTIONS.find((p) => p.id === activePlaymat)?.name}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {PLAYMAT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => {
-                        sound.playTick();
-                        setPlaymat(opt.id);
-                      }}
-                      className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer ${
-                        playmat === opt.id
-                          ? `bg-stone-900 border-2 ${opt.accentColor} shadow-md`
-                          : 'bg-stone-900/40 border-stone-800 hover:border-stone-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-stone-100">{opt.name}</span>
-                        {playmat === opt.id && (
-                          <span className="w-5 h-5 rounded-full bg-amber-400 text-stone-950 flex items-center justify-center text-[10px]">
-                            <Check size={12} />
+                  {PLAYMAT_OPTIONS.map((opt) => {
+                    const isOwned = unlockedPlaymatSet.has(opt.id);
+                    const isEquipped = activePlaymat === opt.id;
+                    const price = getPlaymatPrice(opt.id);
+
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        disabled={!isOwned}
+                        onClick={() => {
+                          if (!isOwned) return;
+                          sound.playTick();
+                          setPlaymat(opt.id);
+                          void syncProfileToCloud({ equippedPlaymat: opt.id }).catch(() => {});
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden ${
+                          isEquipped
+                            ? `bg-stone-900 border-2 ${opt.accentColor} shadow-md cursor-pointer`
+                            : isOwned
+                            ? 'bg-stone-900/45 border-stone-700 hover:border-stone-500 cursor-pointer'
+                            : 'bg-stone-950/60 border-stone-800/80 opacity-65 cursor-not-allowed'
+                        }`}
+                        title={
+                          isOwned
+                            ? `Equipar ${opt.name}`
+                            : `Bloqueado — compre na Loja por ${price.crystalCost} Cristais ou ${price.goldCost} Ouro`
+                        }
+                      >
+                        <div className="flex items-center justify-between mb-1.5 gap-2">
+                          <span className="text-xs font-bold text-stone-100">{opt.name}</span>
+                          {isEquipped ? (
+                            <span className="w-5 h-5 rounded-full bg-amber-400 text-stone-950 flex items-center justify-center text-[10px] shrink-0">
+                              <Check size={12} />
+                            </span>
+                          ) : !isOwned ? (
+                            <span className="px-1.5 py-0.5 rounded bg-stone-900 border border-stone-700 text-[9px] font-mono text-stone-400 flex items-center gap-1 shrink-0">
+                              <Lock size={9} /> {price.crystalCost} 💎 / {price.goldCost} 🪙
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1.5 border border-white/15">
+                          <ArenaPlaymatBackdrop
+                            playmat={opt.id}
+                            animated={opt.isAnimated}
+                            variant="preview"
+                          />
+                          <span className="absolute bottom-1 left-1.5 px-1.5 py-0.5 rounded bg-black/65 text-[9px] font-bold text-amber-200/90 z-10">
+                            {opt.isAnimated ? `✨ ${opt.animationLabel}` : 'Estático (Padrão)'}
                           </span>
-                        )}
-                      </div>
-                      <div className={`w-full h-2 rounded-full mb-1.5 ${opt.previewClass} border border-white/10`} />
-                      <p className="text-[10px] text-stone-400 leading-snug">{opt.subtitle}</p>
-                    </button>
-                  ))}
+                        </div>
+                        <p className="text-[10px] text-stone-400 leading-snug">{opt.subtitle}</p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -889,37 +947,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Verso de Carta do Baralho
                   </h3>
                   <span className="text-[10px] text-stone-400 font-mono">
-                    {CARD_BACK_OPTIONS.find((c) => c.id === cardBack)?.name}
+                    {CARD_BACK_OPTIONS.find((c) => c.id === activeCardBack)?.name}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {CARD_BACK_OPTIONS.map((cb) => (
-                    <button
-                      key={cb.id}
-                      onClick={() => {
-                        sound.playTick();
-                        setCardBack(cb.id);
-                      }}
-                      className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 cursor-pointer ${
-                        cardBack === cb.id
-                          ? 'bg-stone-900 border-2 border-amber-400 shadow-md'
-                          : 'bg-stone-900/40 border-stone-800 hover:border-stone-700'
-                      }`}
-                    >
-                      <div
-                        className={`w-10 h-14 rounded-lg bg-gradient-to-b ${cb.bgClass} border-2 ${cb.borderClass} flex items-center justify-center text-lg shadow-inner`}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                  {CARD_BACK_OPTIONS.map((cb) => {
+                    const isOwned = unlockedCardBackSet.has(cb.id);
+                    const isEquipped = activeCardBack === cb.id;
+                    const price = getCardBackPrice(cb.id);
+
+                    return (
+                      <button
+                        key={cb.id}
+                        type="button"
+                        disabled={!isOwned}
+                        onClick={() => {
+                          if (!isOwned) return;
+                          sound.playTick();
+                          setCardBack(cb.id);
+                          void syncProfileToCloud({ equippedCardBack: cb.id }).catch(() => {});
+                        }}
+                        className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 ${
+                          isEquipped
+                            ? 'bg-stone-900 border-2 border-amber-400 shadow-md cursor-pointer'
+                            : isOwned
+                            ? 'bg-stone-900/45 border-stone-700 hover:border-stone-500 cursor-pointer'
+                            : 'bg-stone-950/60 border-stone-800/80 opacity-65 cursor-not-allowed'
+                        }`}
+                        title={
+                          isOwned
+                            ? `Equipar ${cb.name}`
+                            : `Bloqueado — compre na Loja por ${price.crystalCost} Cristais ou ${price.goldCost} Ouro`
+                        }
                       >
-                        {cb.emblem}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-bold text-stone-200 truncate">{cb.name}</div>
-                        <div className="text-[9px] text-amber-400 font-mono mt-0.5">
-                          {cardBack === cb.id ? 'Selecionado' : 'Escolher'}
+                        <div className="relative">
+                          <CardBackArt
+                            theme={cb.id}
+                            context="preview"
+                            animated={cb.isAnimated}
+                            compact
+                            className="w-12 h-18 rounded-lg shadow-md"
+                          />
+                          {!isOwned && (
+                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-stone-950 border border-stone-600 flex items-center justify-center text-stone-300 z-20">
+                              <Lock size={9} />
+                            </span>
+                          )}
                         </div>
-                      </div>
-                    </button>
-                  ))}
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-bold text-stone-200 truncate">{cb.name}</div>
+                          <div className="text-[8px] text-stone-400 leading-tight mt-0.5">
+                            {cb.isAnimated ? '✨ Animado' : 'Estático'}
+                          </div>
+                          <div className="text-[9px] font-mono mt-0.5 tabular-nums text-amber-400">
+                            {isEquipped
+                              ? 'Selecionado'
+                              : isOwned
+                              ? 'Escolher'
+                              : `${price.crystalCost} 💎 / ${price.goldCost} 🪙`}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

@@ -626,6 +626,7 @@ export function isCardArchangel(card: CardInstance): boolean {
     cardNameLower.includes('pólus') ||
     cardNameLower.includes('torvyx') ||
     cardNameLower.includes('fanx') ||
+    cardNameLower.includes('fanael') ||
     cardNameLower.includes('kaliel') ||
     cardNameLower.includes('faleziel') ||
     cardNameLower.includes('angiris') ||

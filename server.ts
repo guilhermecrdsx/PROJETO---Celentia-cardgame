@@ -11,6 +11,7 @@ import {
   type RankPolicyConfig,
 } from './src/utils/rankMath.ts';
 import { type PackType, PACK_MAP } from './src/data/packs.ts';
+import type { CurrencyType } from './src/data/economy.ts';
 import {
   type AuthRequest,
   requireAuth,
@@ -31,6 +32,7 @@ import {
   getOrCreateGoogleUser,
   getPlayerStateByUidOrEmail,
   getPublicPlayerProfileByIdentifier,
+  getGlobalLeaderboard,
   isUserAdminAccount,
   migrateExistingNicknamesToHandles,
   openCardPackByUid,
@@ -39,7 +41,9 @@ import {
   savePlayerDeckSlotByUid,
   searchPublicPlayers,
   unlockAvatarByUid,
+  unlockCardBackByUid,
   unlockCardByUid,
+  unlockPlaymatByUid,
   updatePlayerProfileByUid,
 } from './src/db/playerRepository.ts';
 
@@ -344,13 +348,15 @@ async function startServer() {
       if (!req.user) {
         return res.status(401).json({ error: 'Não autorizado.' });
       }
-      const { nickname, preferredSide, avatarId } = req.body || {};
+      const { nickname, preferredSide, avatarId, equippedPlaymat, equippedCardBack } = req.body || {};
       const player = await updatePlayerProfileByUid(
         req.user.uid,
         {
           nickname,
           preferredSide,
           avatarId,
+          equippedPlaymat,
+          equippedCardBack,
         },
         req.user.email
       );
@@ -367,6 +373,22 @@ async function startServer() {
       if (error?.message === 'AVATAR_LOCKED') {
         return res.status(403).json({
           error: 'Este avatar ainda não foi desbloqueado na Loja ou liberado pelo Admin.',
+        });
+      }
+      if (error?.message === 'PLAYMAT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Tapete de batalha não encontrado no catálogo.' });
+      }
+      if (error?.message === 'PLAYMAT_LOCKED') {
+        return res.status(403).json({
+          error: 'Este tapete de batalha ainda não foi desbloqueado na Loja.',
+        });
+      }
+      if (error?.message === 'CARD_BACK_NOT_FOUND') {
+        return res.status(404).json({ error: 'Verso de carta não encontrado no catálogo.' });
+      }
+      if (error?.message === 'CARD_BACK_LOCKED') {
+        return res.status(403).json({
+          error: 'Este verso de carta ainda não foi desbloqueado na Loja.',
         });
       }
       if (typeof error?.message === 'string' && error.message.startsWith('INVALID_NICKNAME:')) {
@@ -387,23 +409,47 @@ async function startServer() {
         return res.status(401).json({ error: 'Não autorizado.' });
       }
       const { slotId, name, cardIds, setActive } = req.body || {};
+      const parsedSlotId = Number(slotId);
+
+      if (parsedSlotId === 0) {
+        const player = await savePlayerDeckSlotByUid(
+          req.user.uid,
+          {
+            slotId: 0,
+            name: '',
+            cardIds: [],
+            setActive: false,
+          },
+          req.user.email
+        );
+        return res.json({ player });
+      }
+
       if (
+        !Number.isInteger(parsedSlotId) ||
+        parsedSlotId < 1 ||
+        parsedSlotId > 3 ||
         !Array.isArray(cardIds) ||
-        cardIds.length !== 20 ||
+        (cardIds.length !== 0 && cardIds.length !== 20) ||
         !cardIds.every((id) => typeof id === 'string')
       ) {
         return res.status(400).json({
-          error: 'O baralho deve conter exatamente 20 cartas para ser salvo.',
+          error: 'O baralho deve conter exatamente 20 cartas para ser salvo (ou 0 para esvaziar o espaço).',
         });
       }
 
       const player = await savePlayerDeckSlotByUid(
         req.user.uid,
         {
-          slotId: Number(slotId) || 1,
-          name: typeof name === 'string' ? name : `Espaço ${slotId || 1}`,
+          slotId: parsedSlotId,
+          name:
+            typeof name === 'string' && name.trim()
+              ? name
+              : cardIds.length === 0
+                ? `Espaço Vazio ${parsedSlotId}`
+                : `Baralho Personalizado ${parsedSlotId}`,
           cardIds,
-          setActive: Boolean(setActive),
+          setActive: cardIds.length === 20 && Boolean(setActive),
         },
         req.user.email
       );
@@ -421,27 +467,39 @@ async function startServer() {
       if (!req.user) {
         return res.status(401).json({ error: 'Não autorizado.' });
       }
-      const { cardId } = req.body || {};
+      const { cardId, currency } = req.body || {};
       if (!cardId || typeof cardId !== 'string') {
         return res.status(400).json({ error: 'ID da carta inválido.' });
       }
+      const normalizedCurrency: CurrencyType = currency === 'crystals' ? 'crystals' : 'gold';
 
-      const result = await unlockCardByUid(req.user.uid, cardId, req.user.email);
+      const result = await unlockCardByUid(req.user.uid, cardId, normalizedCurrency, req.user.email);
       return res.json({
         player: result.state,
         unlockedCardId: result.unlockedCardId,
         costPaid: result.costPaid,
+        currency: result.currency,
       });
     } catch (error: any) {
       if (error?.message === 'EVENT_EXCLUSIVE_CARD') {
         return res.status(400).json({
           error:
-            'Cartas das classes Divino, Cósmico, Sombrio e Mágico não podem ser compradas com Ouro. Elas são liberadas por Passes de Evento ou Premiação de um Admin.',
+            'Cartas das classes Divino, Cósmico, Sombrio e Mágico não podem ser compradas na Loja. Elas são liberadas por Passes de Evento ou Premiação de um Admin.',
+        });
+      }
+      if (error?.message === 'CRYSTALS_TIER_LIMIT_EXCEEDED') {
+        return res.status(400).json({
+          error: 'Apenas cartas até o Tier 3 podem ser compradas com Cristais. Cartas de Tier 4 ou superior exigem Ouro.',
+        });
+      }
+      if (error?.message === 'INSUFFICIENT_CRYSTALS') {
+        return res.status(400).json({
+          error: 'Cristais insuficientes para desbloquear esta carta. Jogue partidas para acumular mais Cristais!',
         });
       }
       if (error?.message === 'INSUFFICIENT_GOLD') {
         return res.status(400).json({
-          error: 'Ouro insuficiente para desbloquear esta carta. Vença partidas para conquistar mais Ouro!',
+          error: 'Ouro insuficiente para desbloquear esta carta.',
         });
       }
       if (error?.message === 'CARD_NOT_FOUND') {
@@ -459,13 +517,15 @@ async function startServer() {
       if (!req.user) {
         return res.status(401).json({ error: 'Não autorizado.' });
       }
-      const { avatarId, equip } = req.body || {};
+      const { avatarId, currency, equip } = req.body || {};
       if (!avatarId || typeof avatarId !== 'string') {
         return res.status(400).json({ error: 'Avatar inválido.' });
       }
+      const normalizedCurrency: CurrencyType = currency === 'gold' ? 'gold' : 'crystals';
       const result = await unlockAvatarByUid(
         req.user.uid,
         avatarId,
+        normalizedCurrency,
         req.user.email,
         equip !== false
       );
@@ -473,10 +533,16 @@ async function startServer() {
         player: result.state,
         unlockedAvatarId: result.unlockedAvatarId,
         costPaid: result.costPaid,
+        currency: result.currency,
       });
     } catch (error: any) {
       if (error?.message === 'AVATAR_NOT_FOUND') {
         return res.status(404).json({ error: 'Avatar não encontrado no catálogo.' });
+      }
+      if (error?.message === 'INSUFFICIENT_CRYSTALS') {
+        return res.status(400).json({
+          error: 'Cristais insuficientes para adquirir este avatar.',
+        });
       }
       if (error?.message === 'INSUFFICIENT_GOLD') {
         return res.status(400).json({
@@ -486,6 +552,94 @@ async function startServer() {
       console.error('Failed in POST /api/player/unlock-avatar:', error);
       return res.status(500).json({
         error: error?.message || 'Falha ao desbloquear avatar.',
+      });
+    }
+  });
+
+  app.post('/api/player/unlock-playmat', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autorizado.' });
+      }
+      const { playmatId, currency, equip } = req.body || {};
+      if (!playmatId || typeof playmatId !== 'string') {
+        return res.status(400).json({ error: 'Tapete de batalha inválido.' });
+      }
+      const normalizedCurrency: CurrencyType = currency === 'gold' ? 'gold' : 'crystals';
+      const result = await unlockPlaymatByUid(
+        req.user.uid,
+        playmatId,
+        normalizedCurrency,
+        req.user.email,
+        equip !== false
+      );
+      return res.json({
+        player: result.state,
+        unlockedPlaymatId: result.unlockedPlaymatId,
+        costPaid: result.costPaid,
+        currency: result.currency,
+      });
+    } catch (error: any) {
+      if (error?.message === 'PLAYMAT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Tapete de batalha não encontrado no catálogo.' });
+      }
+      if (error?.message === 'INSUFFICIENT_CRYSTALS') {
+        return res.status(400).json({
+          error: 'Cristais insuficientes para adquirir este tapete (custa 550 Cristais).',
+        });
+      }
+      if (error?.message === 'INSUFFICIENT_GOLD') {
+        return res.status(400).json({
+          error: 'Ouro insuficiente para adquirir este tapete (custa 220 Ouro).',
+        });
+      }
+      console.error('Failed in POST /api/player/unlock-playmat:', error);
+      return res.status(500).json({
+        error: error?.message || 'Falha ao desbloquear tapete de batalha.',
+      });
+    }
+  });
+
+  app.post('/api/player/unlock-card-back', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'Não autorizado.' });
+      }
+      const { cardBackId, currency, equip } = req.body || {};
+      if (!cardBackId || typeof cardBackId !== 'string') {
+        return res.status(400).json({ error: 'Verso de carta inválido.' });
+      }
+      const normalizedCurrency: CurrencyType = currency === 'gold' ? 'gold' : 'crystals';
+      const result = await unlockCardBackByUid(
+        req.user.uid,
+        cardBackId,
+        normalizedCurrency,
+        req.user.email,
+        equip !== false
+      );
+      return res.json({
+        player: result.state,
+        unlockedCardBackId: result.unlockedCardBackId,
+        costPaid: result.costPaid,
+        currency: result.currency,
+      });
+    } catch (error: any) {
+      if (error?.message === 'CARD_BACK_NOT_FOUND') {
+        return res.status(404).json({ error: 'Verso de carta não encontrado no catálogo.' });
+      }
+      if (error?.message === 'INSUFFICIENT_CRYSTALS') {
+        return res.status(400).json({
+          error: 'Cristais insuficientes para adquirir este verso de carta (custa 300 Cristais).',
+        });
+      }
+      if (error?.message === 'INSUFFICIENT_GOLD') {
+        return res.status(400).json({
+          error: 'Ouro insuficiente para adquirir este verso de carta (custa 120 Ouro).',
+        });
+      }
+      console.error('Failed in POST /api/player/unlock-card-back:', error);
+      return res.status(500).json({
+        error: error?.message || 'Falha ao desbloquear verso de carta.',
       });
     }
   });
@@ -511,7 +665,7 @@ async function startServer() {
         costPaid: result.costPaid,
         usedFreePack: result.usedFreePack,
         drops: result.drops,
-        totalRefundGold: result.totalRefundGold,
+        totalRefundCrystals: result.totalRefundCrystals,
       });
     } catch (error: any) {
       if (error?.message === 'INSUFFICIENT_GOLD') {
@@ -536,22 +690,54 @@ async function startServer() {
       if (!req.user) {
         return res.status(401).json({ error: 'Não autorizado.' });
       }
-      const { result, deckName, rpChange, opponentName, opponentRank, mode } = req.body || {};
+      const {
+        result,
+        deckName,
+        opponentName,
+        opponentRank,
+        mode,
+        playerHp,
+        playerMaxHp,
+        opponentHp,
+        totalRounds,
+        endReason,
+      } = req.body || {};
       const matchOutcome = result === 'victory' ? 'victory' : 'defeat';
       const normalizedMode: 'pvp_normal' | 'pvp_ranked' | 'pvia' =
         mode === 'pvp_normal' || mode === 'pvp_ranked' || mode === 'pvia'
           ? mode
-          : 'pvp_ranked';
+          : 'pvia';
 
       const outcome = await recordCompletedMatchByUid(
         req.user.uid,
         {
           result: matchOutcome,
-          deckName: typeof deckName === 'string' ? deckName : 'Tríade Elemental: Fogo, Raiz & Trovão',
-          rpChange: Number(rpChange) || 0,
-          opponentName: typeof opponentName === 'string' ? opponentName : 'Guardião de Celentia',
-          opponentRank: typeof opponentRank === 'string' ? opponentRank : 'Bronze III',
+          deckName:
+            typeof deckName === 'string' && deckName.trim()
+              ? deckName.trim().slice(0, 80)
+              : 'Tríade Elemental: Fogo, Raiz & Trovão',
+          opponentName:
+            typeof opponentName === 'string' && opponentName.trim()
+              ? opponentName.trim().slice(0, 64)
+              : 'Guardião de Celentia',
+          opponentRank:
+            typeof opponentRank === 'string' && opponentRank.trim()
+              ? opponentRank.trim().slice(0, 40)
+              : normalizedMode === 'pvia'
+              ? 'IA Tática'
+              : 'Sem rank',
           mode: normalizedMode,
+          playerHp: typeof playerHp === 'number' && Number.isFinite(playerHp) ? playerHp : null,
+          playerMaxHp:
+            typeof playerMaxHp === 'number' && Number.isFinite(playerMaxHp) ? playerMaxHp : null,
+          opponentHp:
+            typeof opponentHp === 'number' && Number.isFinite(opponentHp) ? opponentHp : null,
+          totalRounds:
+            typeof totalRounds === 'number' && Number.isFinite(totalRounds) ? totalRounds : null,
+          endReason:
+            typeof endReason === 'string' && endReason.trim()
+              ? endReason.trim().slice(0, 140)
+              : null,
         },
         req.user.email
       );
@@ -578,6 +764,7 @@ async function startServer() {
         player: outcome.state,
         claimedNow: outcome.claimedNow,
         goldAwarded: outcome.goldAwarded,
+        freeCommonPacksAwarded: outcome.freeCommonPacksAwarded,
       });
     } catch (error: any) {
       if (error?.message === 'PLAYER_NOT_FOUND') {
@@ -601,6 +788,8 @@ async function startServer() {
         action !== 'grant_event_classes' &&
         action !== 'reset_starter_cards' &&
         action !== 'add_gold_5000' &&
+        action !== 'add_crystals_5000' &&
+        action !== 'unlock_all_cosmetics' &&
         action !== 'max_level_rank'
       ) {
         return res.status(400).json({ error: 'Ação administrativa inválida.' });
@@ -633,6 +822,20 @@ async function startServer() {
       console.error('Failed in GET /api/players/search:', error);
       return res.status(500).json({
         error: error?.message || 'Falha ao pesquisar jogadores.',
+      });
+    }
+  });
+
+  app.get('/api/players/leaderboard', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const rawLimit = Number(req.query.limit);
+      const limit = Number.isFinite(rawLimit) ? Math.min(100, Math.max(1, Math.floor(rawLimit))) : 50;
+      const leaderboard = await getGlobalLeaderboard(limit);
+      return res.json({ leaderboard });
+    } catch (error: any) {
+      console.error('Failed in GET /api/players/leaderboard:', error);
+      return res.status(500).json({
+        error: error?.message || 'Falha ao carregar o ranking geral de jogadores.',
       });
     }
   });
@@ -797,6 +1000,7 @@ async function startServer() {
       const {
         nickname,
         gold,
+        crystals,
         level,
         xp,
         rankPoints,
@@ -811,6 +1015,7 @@ async function startServer() {
         {
           nickname,
           gold,
+          crystals,
           level,
           xp,
           rankPoints,
@@ -920,7 +1125,7 @@ async function startServer() {
         return res.status(401).json({ error: 'Não autorizado.' });
       }
       const targetUid = String(req.params.targetUid || '').trim();
-      const { addXp, addRankPoints, addGold } = req.body || {};
+      const { addXp, addRankPoints, addGold, addCrystals } = req.body || {};
       if (!targetUid) {
         return res.status(400).json({ error: 'Jogador alvo inválido.' });
       }
@@ -928,7 +1133,7 @@ async function startServer() {
         req.user.uid,
         req.user.email,
         targetUid,
-        { addXp, addRankPoints, addGold }
+        { addXp, addRankPoints, addGold, addCrystals }
       );
       return res.json(result);
     } catch (error: any) {
@@ -957,6 +1162,8 @@ async function startServer() {
         action !== 'grant_event_classes' &&
         action !== 'reset_starter_cards' &&
         action !== 'add_gold_5000' &&
+        action !== 'add_crystals_5000' &&
+        action !== 'unlock_all_cosmetics' &&
         action !== 'max_level_rank'
       ) {
         return res.status(400).json({ error: 'Ação administrativa inválida.' });
@@ -988,15 +1195,101 @@ async function startServer() {
     return res.status(404).json({ error: 'Endpoint de API não encontrado.' });
   });
 
+  const httpServer = http.createServer(app);
+
   // ============================================================================
   // 3. VITE MIDDLEWARE (DEV) OR STATIC ASSETS (PROD)
   // ============================================================================
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
+    const disableHmr = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        ...(disableHmr
+          ? { hmr: false, ws: false }
+          : {
+              ws: {
+                server: httpServer,
+                path: '/vite-hmr',
+              },
+            }),
+      },
       appType: 'spa',
     });
+
+    if (disableHmr) {
+      const disabledHmrClientStub = `
+const sheetsMap = new Map();
+const linkSheetsMap = new Map();
+if ("document" in globalThis) {
+  document.querySelectorAll("style[data-vite-dev-id]").forEach((el) => {
+    sheetsMap.set(el.getAttribute("data-vite-dev-id"), el);
+  });
+  document.querySelectorAll('link[rel="stylesheet"][data-vite-dev-id]').forEach((el) => {
+    linkSheetsMap.set(el.getAttribute("data-vite-dev-id"), el);
+  });
+}
+let lastInsertedStyle;
+export function updateStyle(id, content) {
+  if (linkSheetsMap.has(id)) return;
+  let style = sheetsMap.get(id);
+  if (!style) {
+    style = document.createElement("style");
+    style.setAttribute("type", "text/css");
+    style.setAttribute("data-vite-dev-id", id);
+    style.textContent = content;
+    if (!lastInsertedStyle) {
+      document.head.appendChild(style);
+      setTimeout(() => { lastInsertedStyle = undefined; }, 0);
+    } else {
+      lastInsertedStyle.insertAdjacentElement("afterend", style);
+    }
+    lastInsertedStyle = style;
+  } else if (style.textContent !== content) {
+    style.textContent = content;
+  }
+  sheetsMap.set(id, style);
+}
+export function removeStyle(id) {
+  if (linkSheetsMap.has(id)) {
+    document.querySelectorAll(\`link[rel="stylesheet"][data-vite-dev-id="\${CSS.escape(id)}"]\`).forEach((el) => el.remove());
+    linkSheetsMap.delete(id);
+  }
+  const style = sheetsMap.get(id);
+  if (style) {
+    document.head.removeChild(style);
+    sheetsMap.delete(id);
+  }
+}
+export function createHotContext() {
+  return {
+    data: {},
+    accept() {},
+    acceptExports() {},
+    dispose() {},
+    prune() {},
+    invalidate() {},
+    on() {},
+    off() {},
+    send() {},
+  };
+}
+export function injectQuery(url, queryToInject) {
+  if (url[0] !== "." && url[0] !== "/") return url;
+  const pathname = url.replace(/[?#].*$/, "");
+  const { search, hash } = new URL(url, "http://vite.dev");
+  return \`\${pathname}?\${queryToInject}\${search ? "&" + search.slice(1) : ""}\${hash || ""}\`;
+}
+export class ErrorOverlay extends HTMLElement {}
+`;
+      app.get('/@vite/client', (_req, res) => {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.send(disabledHmrClientStub);
+      });
+    }
+
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(__dirname, 'dist');
@@ -1006,7 +1299,6 @@ async function startServer() {
     });
   }
 
-  const httpServer = http.createServer(app);
   setupPvpWebSocketServer(httpServer, {
     isQueueEnabled: (matchType) => {
       const key: QueueId = matchType === 'ranked' ? 'pvp_ranked' : 'pvp_normal';

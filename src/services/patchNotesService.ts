@@ -96,46 +96,81 @@ export function getTodayBrDate(): string {
 }
 
 export const DEFAULT_INITIAL_PATCH_DRAFT: PatchNoteDraft = {
-  version: 'v1.4.0',
-  title: 'Arena Mobile Reformulada, Tutorial Interativo & Modo Estático',
+  version: 'v1.5.0',
+  title: 'Tapetes Animados, Novo Modal de Cartas, Padronização & Animações Tier 1',
   summary:
-    'Grande atualização focada em fluidez, leitura clara no celular, aprendizado prático direto no campo de batalha e ajustes importantes de combate nos Arcanjos.',
+    'Grande atualização visual e sistêmica trazendo tapetes exclusivos animados, isolamento de baralhos por conta, novo modal expandido de cartas, padronização global de condições, ajustes em Cristalys, Finn e Fanael e animações modernizadas para cartas de Tier 1.',
   releaseDate: getTodayBrDate(),
   entries: [
     {
-      id: 'entry_tutorial_guided',
+      id: 'v150_playmats_animated',
       category: 'feature',
-      text: 'Novo Tutorial Interativo no menu de Modos de Jogo: aprenda compra de cartas, invocação, ataque, bloqueio e habilidades rápidas em uma partida prática guiada sobre o campo real.',
+      text: 'Tapetes de arena receberam animações exclusivas e distintas, predominantes no lado do jogador que o equipa, além de novos efeitos rúnicos no Astrolábio Rúnico.',
     },
     {
-      id: 'entry_patch_notes_tab',
+      id: 'v150_default_playmat_cardback',
       category: 'feature',
-      text: 'Nova aba Versão & Patch Notes integrada ao Manual de Regras, exibindo a versão atual e o histórico de atualizações em tempo real para todos os jogadores.',
+      text: 'Adicionados Tapete Padrão e Verso de Carta Inicial sem animações como opções iniciais limpas para todos os duelistas.',
     },
     {
-      id: 'entry_static_animations',
-      category: 'feature',
-      text: 'Adicionadas versões estáticas das animações e novas opções de desempenho nas Configurações (Completas, Estáticas ou Desativadas) para deixar o jogo mais leve.',
-    },
-    {
-      id: 'entry_mobile_arena',
+      id: 'v150_card_modal_redesign',
       category: 'ui_mobile',
-      text: 'Arena de combate Mobile completamente reconstruída com cartas dedicadas de alta legibilidade, visualização imediata de atributos e acesso rápido ao registro de Crônicas.',
+      text: 'Modal expandido de informações das cartas reformulado com dimensões fixas, abas Descrição/História, alternador direto de nível (Tier 5/6) e barras de Dano e Defesa com fórmula detalhada no hover.',
     },
     {
-      id: 'entry_menu_modes_visual',
+      id: 'v150_passives_overlay_cleanup',
       category: 'ui_mobile',
-      text: 'Menu inicial ampliado com logotipo Celentia em maior destaque, cartas laterais extras em tela cheia, novo botão Jogar e modal de seleção de modos reformulado.',
+      text: 'Painel detalhado de Passivas e Efeitos agora abre sobreposto à direita em qualquer tela, com legenda de Origem limpa (sem nomes de cores entre parênteses) e remoção do texto redundante de Corte das Fadas mantendo seu ícone dourado.',
     },
     {
-      id: 'entry_archangel_damage_fix',
-      category: 'balance',
-      text: 'Arcanjos agora causam exatamente 1 de dano direto à vida do jogador em ataques diretos por padrão, salvo quando modificados por efeitos ou habilidades específicas.',
+      id: 'v150_neutral_icon_and_enemy_deck',
+      category: 'ui_mobile',
+      text: 'Novo ícone visual exclusivo para a classe Neutro e reposicionamento mais recuado do baralho inimigo oculto na arena de combate.',
     },
     {
-      id: 'entry_levelup_ready',
+      id: 'v150_deck_account_isolation',
+      category: 'fix',
+      text: 'Corrigida falha de sincronização de baralhos entre contas: decks agora são estritamente isolados por conta, iniciando com espaços vazios e apenas o deck padrão selecionado.',
+    },
+    {
+      id: 'v150_conditions_standardization',
       category: 'balance',
-      text: 'Cartas geradas pela subida de nível de um Arcanjo agora chegam prontas para serem jogadas ainda na mesma rodada.',
+      text: 'Padronização global de efeitos de condição entregues entre unidades: regras, rastreamento de origem e visual padrão unificados preservando as animações próprias de cada carta.',
+    },
+    {
+      id: 'v150_cristalys_rework',
+      category: 'balance',
+      text: 'Cristalys, a Fada reformulada: ao ser invocada aplica CURA por 2 rodadas em uma unidade aliada ou si mesma com ativação instantânea (+9 de Vida na invocação + 1 rodada restante) e nova animação de banho mágico d’água.',
+    },
+    {
+      id: 'v150_finn_rework',
+      category: 'balance',
+      text: 'Finn, o Fada atualizado: na primeira vez que atingir a vida do jogador inimigo, aumenta permanentemente +1 na Vida Máxima e concede +1 de Vida atual, com segmento especial verde-rosa na barra de vida.',
+    },
+    {
+      id: 'v150_fanael_rename_vfx',
+      category: 'feature',
+      text: 'Fanx foi renomeado oficialmente para Fanael, o Arcanjo e recebeu uma nova animação cinematográfica de bênção angelical com asas luminosas, halo celestial e fitas d’água cristalina.',
+    },
+    {
+      id: 'v150_elemental_orbs_vfx',
+      category: 'ui_mobile',
+      text: 'Modernizada a integração das orbes elementais de Fernando (ígnea), Glauco (gélida), Mara (elétrica) e Nulio (divina) com voo curvo, espiral de absorção e brilho fluido fundindo-se à unidade escolhida.',
+    },
+    {
+      id: 'v150_celia_vilma_vfx',
+      category: 'feature',
+      text: 'Celia (Gelo) e Vilma (Fogo) ganharam animações temáticas ao ativarem seus bônus de compra, barreiras mágicas exclusivas ao bloquearem dano de seus elementos e nova onda de chamas para Vilma.',
+    },
+    {
+      id: 'v150_gough_uhr_philio_vfx',
+      category: 'ui_mobile',
+      text: 'Animações modernizadas e adicionadas no Tier 1: arco e flecha elétrica de Gough, magia arcana de compra no Mago Uhr, vórtice de absorção cósmica em Philio, baforada negra em Targor e vida extra em Mipo.',
+    },
+    {
+      id: 'v150_reveal_capture_standard',
+      category: 'ui_mobile',
+      text: 'Animação padrão do efeito REVELAR completamente modernizada e aplicada em Vanusa; Bia passou a utilizar exclusivamente a animação padrão de CAPTURAR.',
     },
   ],
 };

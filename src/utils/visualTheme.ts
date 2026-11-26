@@ -1,7 +1,33 @@
 import { useState, useEffect } from 'react';
 
-export type PlaymatTheme = 'arcane_citadel' | 'celestial_sanctuary' | 'obsidian_forge' | 'classic_slate';
-export type CardBackTheme = 'royal_gold' | 'angiris_wings' | 'cosmic_void' | 'crimson_war';
+export type PlaymatTheme =
+  | 'standard_arena'
+  | 'arcane_citadel'
+  | 'celestial_sanctuary'
+  | 'obsidian_forge'
+  | 'classic_slate';
+export type CardBackTheme =
+  | 'standard_classic'
+  | 'royal_gold'
+  | 'angiris_wings'
+  | 'cosmic_void'
+  | 'crimson_war';
+
+const VALID_PLAYMAT_THEMES = new Set<PlaymatTheme>([
+  'standard_arena',
+  'arcane_citadel',
+  'celestial_sanctuary',
+  'obsidian_forge',
+  'classic_slate',
+]);
+
+const VALID_CARD_BACK_THEMES = new Set<CardBackTheme>([
+  'standard_classic',
+  'royal_gold',
+  'angiris_wings',
+  'cosmic_void',
+  'crimson_war',
+]);
 export type ViewLayoutMode = 'auto' | 'mobile' | 'desktop';
 export type AnimationMode = 'full' | 'static' | 'off';
 export type TurnIndicatorMode = 'full' | 'static' | 'off';
@@ -37,8 +63,12 @@ export interface VisualPreferences {
 
 export function getVisualPreferences(): VisualPreferences {
   try {
-    const playmat = (localStorage.getItem(PLAYMAT_THEME_KEY) as PlaymatTheme) || 'arcane_citadel';
-    const cardBack = (localStorage.getItem(CARD_BACK_THEME_KEY) as CardBackTheme) || 'royal_gold';
+    const playmatRaw = localStorage.getItem(PLAYMAT_THEME_KEY) as PlaymatTheme | null;
+    const playmat: PlaymatTheme =
+      playmatRaw && VALID_PLAYMAT_THEMES.has(playmatRaw) ? playmatRaw : 'standard_arena';
+    const cardBackRaw = localStorage.getItem(CARD_BACK_THEME_KEY) as CardBackTheme | null;
+    const cardBack: CardBackTheme =
+      cardBackRaw && VALID_CARD_BACK_THEMES.has(cardBackRaw) ? cardBackRaw : 'standard_classic';
     const foilRaw = localStorage.getItem(FOIL_EFFECTS_KEY);
     const foilEffects = foilRaw === null ? true : foilRaw === 'true';
     const particlesRaw = localStorage.getItem(ELEMENTAL_PARTICLES_KEY);
@@ -80,8 +110,8 @@ export function getVisualPreferences(): VisualPreferences {
     };
   } catch {
     return {
-      playmat: 'arcane_citadel',
-      cardBack: 'royal_gold',
+      playmat: 'standard_arena',
+      cardBack: 'standard_classic',
       foilEffects: true,
       elementalParticles: true,
       viewLayout: 'auto',
@@ -284,34 +314,53 @@ export const PLAYMAT_OPTIONS: {
   subtitle: string;
   previewClass: string;
   accentColor: string;
+  isAnimated: boolean;
+  animationLabel: string;
 }[] = [
+  {
+    id: 'standard_arena',
+    name: 'Arena Padrão',
+    subtitle: 'Tabuleiro clássico em pedra escura fosca, limpo e estático',
+    previewClass: 'bg-gradient-to-br from-[#16151c] via-[#100f15] to-[#08070b]',
+    accentColor: 'border-stone-500/60 text-stone-300',
+    isAnimated: false,
+    animationLabel: 'Estático (Padrão sem animações)',
+  },
   {
     id: 'arcane_citadel',
     name: 'Cidadela Arcana',
-    subtitle: 'Pedra rúnica indigo com círculos de invocação dourados',
+    subtitle: 'Astrolábio rúnico triplo com ondas arcanas, linhas ley pulsantes e runas flutuantes',
     previewClass: 'bg-gradient-to-br from-[#161329] via-[#0d0b18] to-[#06050c]',
-    accentColor: 'border-amber-500/60 text-amber-300',
+    accentColor: 'border-violet-400/70 text-violet-300',
+    isAnimated: true,
+    animationLabel: 'Astrolábio Triplo, Ondas Arcanas & Runas Levitantes',
   },
   {
     id: 'celestial_sanctuary',
     name: 'Santuário Celestial Angiris',
-    subtitle: 'Mármore astral dourado e luz do Conselho Celestial',
+    subtitle: 'Asas serafínicas douradas, ondas solares radiantes, feixes divinos e plumas de luz',
     previewClass: 'bg-gradient-to-br from-[#282114] via-[#17130d] to-[#0b0906]',
     accentColor: 'border-yellow-400/70 text-yellow-200',
+    isAnimated: true,
+    animationLabel: 'Asas Serafínicas, Feixes Solares & Plumas de Luz',
   },
   {
     id: 'obsidian_forge',
     name: 'Forja de Obsidiana',
-    subtitle: 'Rocha vulcânica escura com veios de brasa carmesim',
+    subtitle: 'Caldeira vulcânica com fissuras incandescentes, ondas de calor e chuva de brasas',
     previewClass: 'bg-gradient-to-br from-[#261115] via-[#140a0d] to-[#090406]',
-    accentColor: 'border-rose-500/60 text-rose-300',
+    accentColor: 'border-rose-500/70 text-rose-300',
+    isAnimated: true,
+    animationLabel: 'Fissuras Incandescentes, Calor & Tempestade de Brasas',
   },
   {
     id: 'classic_slate',
     name: 'Ardósia Ancestral',
-    subtitle: 'Mesa sóbria em pedra escura',
-    previewClass: 'bg-gradient-to-br from-[#191820] via-[#100f15] to-[#08070b]',
-    accentColor: 'border-stone-500/60 text-stone-300',
+    subtitle: 'Cortinas triplas de aurora boreal, constelações pulsantes e estrelas cadentes',
+    previewClass: 'bg-gradient-to-br from-[#101824] via-[#0c111a] to-[#06080f]',
+    accentColor: 'border-cyan-400/60 text-cyan-200',
+    isAnimated: true,
+    animationLabel: 'Aurora Boreal Tripla, Constelações & Meteoros',
   },
 ];
 
@@ -321,13 +370,26 @@ export const CARD_BACK_OPTIONS: {
   emblem: string;
   bgClass: string;
   borderClass: string;
+  isAnimated: boolean;
+  animationLabel: string;
 }[] = [
+  {
+    id: 'standard_classic',
+    name: 'Verso Padrão',
+    emblem: '🛡️',
+    bgClass: 'from-stone-800 via-stone-900 to-neutral-950',
+    borderClass: 'border-stone-500',
+    isAnimated: false,
+    animationLabel: 'Estático (Padrão sem animações)',
+  },
   {
     id: 'royal_gold',
     name: 'Real Dourado',
     emblem: '⚜️',
     bgClass: 'from-amber-900 via-stone-900 to-amber-950',
     borderClass: 'border-amber-400',
+    isAnimated: true,
+    animationLabel: 'Reflexo Metálico Dourado & Brasão Pulsante',
   },
   {
     id: 'angiris_wings',
@@ -335,6 +397,8 @@ export const CARD_BACK_OPTIONS: {
     emblem: '🪽',
     bgClass: 'from-yellow-700 via-amber-950 to-stone-950',
     borderClass: 'border-yellow-300',
+    isAnimated: true,
+    animationLabel: 'Raios Solares Giratórios & Halo Radiante',
   },
   {
     id: 'cosmic_void',
@@ -342,6 +406,8 @@ export const CARD_BACK_OPTIONS: {
     emblem: '🔮',
     bgClass: 'from-indigo-900 via-purple-950 to-slate-950',
     borderClass: 'border-indigo-400',
+    isAnimated: true,
+    animationLabel: 'Anéis Orbitais Duplos & Nebulosa Estelar',
   },
   {
     id: 'crimson_war',
@@ -349,6 +415,8 @@ export const CARD_BACK_OPTIONS: {
     emblem: '🐉',
     bgClass: 'from-rose-900 via-red-950 to-stone-950',
     borderClass: 'border-rose-400',
+    isAnimated: true,
+    animationLabel: 'Ondas de Brasas Ascendentes & Coração Dracônico',
   },
 ];
 

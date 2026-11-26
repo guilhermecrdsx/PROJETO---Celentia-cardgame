@@ -2,7 +2,11 @@ import {
   getInMemoryPlayerState,
   syncCompletedMatchToCloud,
   syncProfileToCloud,
+  type CloudPlayerStateDTO,
+  type MatchCompletionRewardsDTO,
 } from '../services/accountApi';
+import { calculateMatchXpReward } from '../data/levelProgression';
+import { calculateMatchCrystalReward } from '../data/economy';
 import { getRankInfo } from './rankSystem';
 import { formatHandleDisplay } from './nickname';
 
@@ -13,11 +17,28 @@ export interface MatchRecord {
   deckCode: string;
   rpChange: number;
   goldEarned?: number;
+  crystalsEarned?: number;
   xpEarned?: number;
   opponentName: string;
   opponentRank: string;
   date: string;
+  playedAtIso?: string;
   mode: 'pvp_normal' | 'pvp_ranked' | 'pvia';
+  playerHp?: number | null;
+  playerMaxHp?: number | null;
+  opponentHp?: number | null;
+  totalRounds?: number | null;
+  endReason?: string | null;
+  isPerfectVictory?: boolean;
+  lossStreakBonus?: number;
+}
+
+export interface MatchRecordExtras {
+  playerHp?: number | null;
+  playerMaxHp?: number | null;
+  opponentHp?: number | null;
+  totalRounds?: number | null;
+  endReason?: string | null;
 }
 
 const STORAGE_KEY = 'celentia_match_history';
@@ -28,6 +49,7 @@ export interface PlayerProfileData {
   level: number;
   xp: number;
   gold: number;
+  crystals: number;
   preferredSide: 'sol' | 'lua' | 'balance';
   avatarId: string;
   rankTier: string;
@@ -37,10 +59,11 @@ const DEFAULT_PROFILE: PlayerProfileData = {
   nickname: '@duelista',
   level: 1,
   xp: 0,
-  gold: 1000,
+  gold: 0,
+  crystals: 0,
   preferredSide: 'balance',
   avatarId: 'av_g_hugo',
-  rankTier: 'Bronze III',
+  rankTier: 'Sem rank',
 };
 
 const DEFAULT_MATCHES: MatchRecord[] = [];
@@ -51,12 +74,14 @@ export function getPlayerProfile(): PlayerProfileData {
     const rankInfo = getRankInfo(cloudState.rankPoints, {
       playerBlockedTotal: cloudState.rankBlockedTotal,
       playerBlockedFromTier: cloudState.rankBlockFromTier,
+      hasPlayedRanked: (cloudState.rankedMatchesPlayed ?? 0) > 0,
     });
     return {
       nickname: formatHandleDisplay(cloudState.nickname),
       level: cloudState.level,
       xp: cloudState.xp,
       gold: cloudState.gold,
+      crystals: cloudState.crystals ?? 0,
       preferredSide: cloudState.preferredSide,
       avatarId: cloudState.avatarId || 'av_g_hugo',
       rankTier: rankInfo.label,
@@ -96,12 +121,14 @@ export async function savePlayerProfileAsync(
       const rankInfo = getRankInfo(cloudResult.rankPoints, {
         playerBlockedTotal: cloudResult.rankBlockedTotal,
         playerBlockedFromTier: cloudResult.rankBlockFromTier,
+        hasPlayedRanked: (cloudResult.rankedMatchesPlayed ?? 0) > 0,
       });
       const synced: PlayerProfileData = {
         nickname: formatHandleDisplay(cloudResult.nickname),
         level: cloudResult.level,
         xp: cloudResult.xp,
         gold: cloudResult.gold,
+        crystals: cloudResult.crystals ?? 0,
         preferredSide: cloudResult.preferredSide,
         avatarId: cloudResult.avatarId || 'av_g_hugo',
         rankTier: rankInfo.label,
@@ -181,38 +208,67 @@ export function getMatchHistory(): MatchRecord[] {
 export function recordMatchResult(
   result: 'victory' | 'defeat',
   deckName: string,
-  rpChange: number,
+  _rpChangeHint: number,
   opponentName: string,
-  mode: 'pvp_normal' | 'pvp_ranked' | 'pvia' = 'pvp_ranked',
-  opponentRank: string = 'Bronze III'
-): MatchRecord[] {
+  mode: 'pvp_normal' | 'pvp_ranked' | 'pvia' = 'pvia',
+  opponentRank: string = 'Sem rank',
+  extras?: MatchRecordExtras
+): Promise<{
+  player: CloudPlayerStateDTO;
+  rewards: MatchCompletionRewardsDTO;
+} | null> {
   const now = new Date();
   const day = String(now.getDate()).padStart(2, '0');
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const year = now.getFullYear();
+
+  const cloudState = getInMemoryPlayerState();
+  const currentLevel = cloudState?.level ?? 1;
+  const isVictory = result === 'victory';
+  const expectedXp = calculateMatchXpReward(mode, isVictory, currentLevel);
+  const expectedCrystals = calculateMatchCrystalReward(mode, isVictory);
+  const safeRp = mode === 'pvp_ranked' ? _rpChangeHint : 0;
+  const isPerfectVictory =
+    isVictory &&
+    typeof extras?.playerHp === 'number' &&
+    typeof extras?.playerMaxHp === 'number' &&
+    extras.playerHp >= extras.playerMaxHp;
 
   const newRecord: MatchRecord = {
     id: `match_${Date.now()}`,
     result,
     deckName,
     deckCode: '2/303',
-    rpChange,
-    goldEarned: result === 'victory' ? 150 : 50,
-    xpEarned: result === 'victory' ? 120 : 40,
+    rpChange: safeRp,
+    goldEarned: 0,
+    crystalsEarned: expectedCrystals,
+    xpEarned: expectedXp,
     opponentName,
     opponentRank,
     date: `${day}/${month}/${year}`,
+    playedAtIso: now.toISOString(),
     mode,
+    playerHp: extras?.playerHp ?? null,
+    playerMaxHp: extras?.playerMaxHp ?? null,
+    opponentHp: extras?.opponentHp ?? null,
+    totalRounds: extras?.totalRounds ?? null,
+    endReason: extras?.endReason ?? null,
+    isPerfectVictory,
+    lossStreakBonus: 0,
   };
 
-  // Trigger Cloud Save (Save State at End of Match)
-  void syncCompletedMatchToCloud({
+  // Trigger authoritative Cloud Save (XP & Ranked RP computed on the server)
+  const syncPromise = syncCompletedMatchToCloud({
     result,
     deckName,
-    rpChange,
     opponentName,
     opponentRank,
     mode,
+    playerHp: extras?.playerHp ?? null,
+    playerMaxHp: extras?.playerMaxHp ?? null,
+    opponentHp: extras?.opponentHp ?? null,
+    totalRounds: extras?.totalRounds ?? null,
+    endReason: extras?.endReason ?? null,
   });
 
   const current = getMatchHistory();
@@ -224,5 +280,5 @@ export function recordMatchResult(
     console.warn('Erro ao salvar histórico de partida:', e);
   }
 
-  return updated;
+  return syncPromise;
 }

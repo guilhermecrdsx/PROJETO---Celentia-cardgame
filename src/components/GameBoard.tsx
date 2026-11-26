@@ -45,11 +45,12 @@ import {
 } from '../logic/combat';
 import { decideAiDefense, decideAiTurnAction } from '../logic/aiPlayer';
 import { sound } from '../services/soundEffects';
-import { loadRankPoints, saveRankPoints, calculateRankDelta } from '../utils/rankSystem';
+import { loadRankPoints, saveRankPoints } from '../utils/rankSystem';
 import { recordMatchResult } from '../utils/matchHistory';
 import {
   claimTutorialRewardInCloud,
   getInMemoryPlayerState,
+  type MatchCompletionRewardsDTO,
 } from '../services/accountApi';
 import {
   setCardConditionSource,
@@ -58,6 +59,8 @@ import {
   withoutConditionSource,
 } from '../utils/conditionEffectsConfig';
 import { CardView } from './CardView';
+import { ArenaSplitPlaymat } from './ArenaPlaymatBackdrop';
+import { CardBackArt } from './CardBackArt';
 import { ArenaCardHoverPreview } from './ArenaCardHoverPreview';
 import { TurnTransitionBanner, type TurnTransitionBannerData } from './TurnTransitionBanner';
 import { TableTurnBorderGlow } from './TableTurnBorderGlow';
@@ -101,7 +104,7 @@ import {
   RoundCoinTransitionState,
   CounterResponseModalData,
 } from './CardActionAnimationsOverlay';
-import { useVisualPreferences } from '../utils/visualTheme';
+import { CardBackTheme, PlaymatTheme, useVisualPreferences } from '../utils/visualTheme';
 import {
   OnlineMatchBootstrap,
   OnlineMatchSnapshot,
@@ -367,6 +370,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   const [tutorialRewardResult, setTutorialRewardResult] = useState<{
     claimedNow: boolean;
     goldAwarded: number;
+    freeCommonPacksAwarded: number;
   } | null>(null);
   const tutorialRewardClaimAttemptedRef = useRef<boolean>(false);
   const [playerOrbActionCount, setPlayerOrbActionCount] = useState<number>(0);
@@ -435,6 +439,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         borRevivedOnce: false,
         zaelUsed: false,
         purpleExtraHpSlots: 0,
+        finnFairyHpSlots: 0,
       };
     }
 
@@ -461,6 +466,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       borRevivedOnce: false,
       zaelUsed: false,
       purpleExtraHpSlots: 0,
+      finnFairyHpSlots: 0,
     };
   });
 
@@ -505,6 +511,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         borRevivedOnce: false,
         zaelUsed: false,
         purpleExtraHpSlots: 0,
+        finnFairyHpSlots: 0,
       };
     }
 
@@ -535,6 +542,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         borRevivedOnce: false,
         zaelUsed: false,
         purpleExtraHpSlots: 0,
+        finnFairyHpSlots: 0,
       };
     }
     return {
@@ -555,6 +563,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       borRevivedOnce: false,
       zaelUsed: false,
       purpleExtraHpSlots: 0,
+      finnFairyHpSlots: 0,
     };
   });
 
@@ -686,6 +695,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
   const {
     playmat,
+    cardBack,
     elementalParticles,
     isMobileView,
     animationMode,
@@ -932,6 +942,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   const [gameOverReason, setGameOverReason] = useState<string | undefined>(undefined);
   const [currentRankPoints, setCurrentRankPoints] = useState<number>(() => loadRankPoints());
   const [rankDelta, setRankDelta] = useState<number | null>(null);
+  const [matchRewards, setMatchRewards] = useState<MatchCompletionRewardsDTO | null>(null);
   const [rematchStatus, setRematchStatus] = useState<RematchRequestStatus>('idle');
   const [rematchStatusMessage, setRematchStatusMessage] = useState<string | null>(null);
   const [incomingRematchFrom, setIncomingRematchFrom] = useState<string | null>(null);
@@ -2002,6 +2013,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 c.burnTurnsRemaining = 0;
                 c.conditions.delete('queimadura');
                 removeCardConditionSource(c, 'queimadura');
+                queueUnitVfx({
+                  type: 'vilma_fire_barrier',
+                  sourceId: c.instanceId,
+                  targetIds: [c.instanceId],
+                  ownerSide: isPlayerBoard ? 'player' : 'opponent',
+                });
+                addLog(`🔥🛡️ [Vilma] Barreira ígnea ativada: imune ao dano de Queimadura!`, 'info');
               } else {
                 c.hp = Math.max(0, c.hp - 4);
                 c.burnTurnsRemaining -= 1;
@@ -2557,9 +2575,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         let nextHand = p.hand.filter((c) => !c.isFugaz);
         const drawnCards: CardInstance[] = [];
 
-        const hasUhrAlive = p.board.some(
+        const uhrCard = p.board.find(
           (c) => c.templateId === 'g_uhr' && c.hp > 0 && c.silencedRounds === 0
         );
+        const hasUhrAlive = Boolean(uhrCard);
         const cardsToDraw = hasUhrAlive ? 2 : 1;
 
         for (let i = 0; i < cardsToDraw; i++) {
@@ -2664,6 +2683,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           nextHand = [...nextHand, ...drawnCards];
           setDrawingCardAnim({ card: drawnCards[0], ownerId: 'player' });
           if (hasUhrAlive) {
+            if (uhrCard && drawnCards.length >= 2) {
+              queueUnitVfx({
+                type: 'mago_uhr_draw_arcana',
+                sourceId: uhrCard.instanceId,
+                targetIds: [uhrCard.instanceId],
+                ownerSide: 'player',
+              });
+            }
             addLog(
               `🧙‍♂️ Efeito Mágico do Mago Uhr ativo! Compra dupla automática: Você comprou ${drawnCards
                 .map((c) => c.name)
@@ -2743,9 +2770,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         let nextHand = o.hand.filter((c) => !c.isFugaz);
         const drawnCards: CardInstance[] = [];
 
-        const hasUhrAlive = o.board.some(
+        const uhrCard = o.board.find(
           (c) => c.templateId === 'g_uhr' && c.hp > 0 && c.silencedRounds === 0
         );
+        const hasUhrAlive = Boolean(uhrCard);
         const cardsToDraw = hasUhrAlive ? 2 : 1;
 
         for (let i = 0; i < cardsToDraw; i++) {
@@ -2846,6 +2874,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         if (drawnCards.length > 0) {
           nextHand = [...nextHand, ...drawnCards];
           if (hasUhrAlive) {
+            if (uhrCard && drawnCards.length >= 2) {
+              queueUnitVfx({
+                type: 'mago_uhr_draw_arcana',
+                sourceId: uhrCard.instanceId,
+                targetIds: [uhrCard.instanceId],
+                ownerSide: 'opponent',
+              });
+            }
             addLog(`🧙‍♂️ Efeito Mágico do Mago Uhr ativo: ${o.name} comprou 2 cartas automaticamente!`, 'spell');
           } else {
             addLog(`[Início da Rodada ${nextRound}] ${o.name} comprou 1 carta automaticamente do baralho.`, 'info');
@@ -3404,6 +3440,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               (enemyUnit.templateId === 'm_vilma' || enemyUnit.name.toLowerCase().includes('vilma')) &&
               enemyUnit.silencedRounds === 0;
             if (enemyUnit.hp <= 0 || isImmortalSol || isEnemyVilmaImmune) {
+              if (isEnemyVilmaImmune && enemyUnit.hp > 0) {
+                queueUnitVfx({
+                  type: 'vilma_fire_barrier',
+                  sourceId: enemyUnit.instanceId,
+                  targetIds: [enemyUnit.instanceId],
+                  ownerSide: 'opponent',
+                });
+                addLog(`🔥🛡️ [Vilma] Barreira ígnea: imune ao dano de Fogo de Vilma!`, 'info');
+              }
               updatedOBoard.push(enemyUnit);
               return;
             }
@@ -3467,6 +3512,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               (playerUnit.templateId === 'm_vilma' || playerUnit.name.toLowerCase().includes('vilma')) &&
               playerUnit.silencedRounds === 0;
             if (playerUnit.hp <= 0 || isImmortalSol || isPlayerVilmaImmune) {
+              if (isPlayerVilmaImmune && playerUnit.hp > 0) {
+                queueUnitVfx({
+                  type: 'vilma_fire_barrier',
+                  sourceId: playerUnit.instanceId,
+                  targetIds: [playerUnit.instanceId],
+                  ownerSide: 'player',
+                });
+                addLog(`🔥🛡️ [Vilma] Barreira ígnea: imune ao dano de Fogo de Vilma inimiga!`, 'info');
+              }
               updatedPBoard.push(playerUnit);
               return;
             }
@@ -4657,18 +4711,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         sound.playDrawGame();
         setGameOverReason(reason);
         setGameOverWinner('draw');
-        if (matchType === 'ranked') {
-          const cloudState = getInMemoryPlayerState();
-          if (cloudState?.rankBlockedTotal) {
-            setRankDelta(0);
-          } else {
-            const delta = calculateRankDelta(false, true);
-            setRankDelta(delta);
-            const newPts = currentRankPoints + delta;
-            setCurrentRankPoints(newPts);
-            saveRankPoints(newPts);
-          }
-        }
+        setRankDelta(null);
         return;
       }
 
@@ -4715,36 +4758,53 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         if (!onlineMatchRecordedRef.current && !isTutorialMode) {
           onlineMatchRecordedRef.current = true;
           const isPlayerWin = winner === 'player';
-          let delta = 0;
-          if (matchType === 'ranked') {
-            const cloudState = getInMemoryPlayerState();
-            if (cloudState?.rankBlockedTotal) {
-              delta = 0;
-              setRankDelta(0);
-            } else {
-              delta = calculateRankDelta(isPlayerWin, false);
-              setRankDelta(delta);
-              const newPts = Math.max(0, currentRankPoints + delta);
-              setCurrentRankPoints(newPts);
-              saveRankPoints(newPts);
-            }
-          } else {
-            delta = isPlayerWin ? 20 : -10;
+          const modeKey =
+            gameMode === 'ai'
+              ? 'pvia'
+              : matchType === 'ranked'
+              ? 'pvp_ranked'
+              : 'pvp_normal';
+          const finalPlayerHp = playerRef.current.hp;
+          const finalPlayerMaxHp = playerRef.current.maxHp;
+          const finalOpponentHp = opponentRef.current.hp;
+
+          if (modeKey !== 'pvp_ranked') {
+            setRankDelta(null);
           }
 
-          const modeKey = gameMode === 'ai' ? 'pvia' : matchType === 'ranked' ? 'pvp_ranked' : 'pvp_normal';
-          recordMatchResult(
+          void recordMatchResult(
             isPlayerWin ? 'victory' : 'defeat',
-            isOnlinePvp && onlineMatchBootstrap?.localDeckName ? onlineMatchBootstrap.localDeckName : 'Meu Baralho',
-            delta,
+            isOnlinePvp && onlineMatchBootstrap?.localDeckName
+              ? onlineMatchBootstrap.localDeckName
+              : 'Meu Baralho',
+            0,
             opponent.name,
             modeKey,
-            isOnlinePvp && onlineMatchBootstrap?.opponentRank ? onlineMatchBootstrap.opponentRank : 'Bronze III'
-          );
+            isOnlinePvp && onlineMatchBootstrap?.opponentRank
+              ? onlineMatchBootstrap.opponentRank
+              : modeKey === 'pvia'
+              ? 'IA Tática'
+              : 'Sem rank',
+            {
+              playerHp: finalPlayerHp,
+              playerMaxHp: finalPlayerMaxHp,
+              opponentHp: finalOpponentHp,
+              totalRounds: round,
+              endReason: reason,
+            }
+          ).then((synced) => {
+            if (!synced) return;
+            setMatchRewards(synced.rewards);
+            if (modeKey === 'pvp_ranked') {
+              setRankDelta(synced.rewards.rpDeltaApplied);
+              setCurrentRankPoints(synced.player.rankPoints);
+              saveRankPoints(synced.player.rankPoints);
+            }
+          });
         }
       }, 3000);
     },
-    [matchType, currentRankPoints, player.name, opponent.name, gameMode, isOnlinePvp, onlineMatchBootstrap, addLog]
+    [matchType, player.name, opponent.name, gameMode, isOnlinePvp, onlineMatchBootstrap, addLog, round, isTutorialMode]
   );
 
   // Check empty deck rule:
@@ -4861,37 +4921,49 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         if (!onlineMatchRecordedRef.current && !isTutorialMode) {
           onlineMatchRecordedRef.current = true;
           const isPlayerWin = winner === 'player';
-          let delta = 0;
-          if (matchType === 'ranked') {
-            const cloudState = getInMemoryPlayerState();
-            if (cloudState?.rankBlockedTotal) {
-              delta = 0;
-              setRankDelta(0);
-            } else {
-              delta = calculateRankDelta(isPlayerWin, false);
-              setRankDelta(delta);
-              const newPts = Math.max(0, currentRankPoints + delta);
-              setCurrentRankPoints(newPts);
-              saveRankPoints(newPts);
-            }
-          } else {
-            delta = isPlayerWin ? 20 : -10;
-          }
-
           const modeKey =
             gameMode === 'ai'
               ? 'pvia'
               : matchType === 'ranked'
               ? 'pvp_ranked'
               : 'pvp_normal';
-          recordMatchResult(
+          const finalPlayerHp = isPlayerWin ? Math.max(playerRef.current.hp, playerRef.current.maxHp) : 0;
+          const finalPlayerMaxHp = playerRef.current.maxHp;
+          const finalOpponentHp = isPlayerWin ? 0 : Math.max(opponentRef.current.hp, opponentRef.current.maxHp);
+
+          if (modeKey !== 'pvp_ranked') {
+            setRankDelta(null);
+          }
+
+          void recordMatchResult(
             isPlayerWin ? 'victory' : 'defeat',
-            isOnlinePvp && onlineMatchBootstrap?.localDeckName ? onlineMatchBootstrap.localDeckName : 'Meu Baralho',
-            delta,
+            isOnlinePvp && onlineMatchBootstrap?.localDeckName
+              ? onlineMatchBootstrap.localDeckName
+              : 'Meu Baralho',
+            0,
             opponent.name,
             modeKey,
-            isOnlinePvp && onlineMatchBootstrap?.opponentRank ? onlineMatchBootstrap.opponentRank : 'Bronze III'
-          );
+            isOnlinePvp && onlineMatchBootstrap?.opponentRank
+              ? onlineMatchBootstrap.opponentRank
+              : modeKey === 'pvia'
+              ? 'IA Tática'
+              : 'Sem rank',
+            {
+              playerHp: finalPlayerHp,
+              playerMaxHp: finalPlayerMaxHp,
+              opponentHp: finalOpponentHp,
+              totalRounds: round,
+              endReason: reasonText,
+            }
+          ).then((synced) => {
+            if (!synced) return;
+            setMatchRewards(synced.rewards);
+            if (modeKey === 'pvp_ranked') {
+              setRankDelta(synced.rewards.rpDeltaApplied);
+              setCurrentRankPoints(synced.player.rankPoints);
+              saveRankPoints(synced.player.rankPoints);
+            }
+          });
         }
       }, 4150);
     },
@@ -4903,10 +4975,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       opponent.name,
       addLog,
       matchType,
-      currentRankPoints,
       gameMode,
       isOnlinePvp,
       onlineMatchBootstrap,
+      round,
+      isTutorialMode,
     ]
   );
 
@@ -5509,6 +5582,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               const drawnCopy: CardInstance = { ...drawn, conditions: new Set(drawn.conditions) };
               if (drawnCopy.element === 'Fogo') {
                 addPowerPoints(drawnCopy, 5);
+                const handRect = getVisibleDomRect('[data-hand-zone="player"]');
+                queueUnitVfx({
+                  type: 'vilma_fire_bonus',
+                  targetPoints: handRect
+                    ? [{ x: handRect.left + handRect.width / 2, y: handRect.top + handRect.height / 2, w: 120, h: 165 }]
+                    : undefined,
+                  ownerSide: 'player',
+                });
                 addLog(
                   `🔥🧙‍♀️ [Vilma, a Bruxa do Fogo] Ao ser eliminada, comprou ${drawnCopy.name} (Classe FOGO) e concedeu a ela +5 de Poder (Poder: ${drawnCopy.power})!`,
                   'spell'
@@ -5555,6 +5636,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               const drawnCopy: CardInstance = { ...drawn, conditions: new Set(drawn.conditions) };
               if (drawnCopy.element === 'Fogo') {
                 addPowerPoints(drawnCopy, 5);
+                const oppHandRect = getVisibleDomRect('[data-hand-zone="opponent"]');
+                queueUnitVfx({
+                  type: 'vilma_fire_bonus',
+                  targetPoints: oppHandRect
+                    ? [{ x: oppHandRect.left + oppHandRect.width / 2, y: oppHandRect.top + oppHandRect.height / 2, w: 120, h: 165 }]
+                    : undefined,
+                  ownerSide: 'opponent',
+                });
                 addLog(
                   `🔥🧙‍♀️ [Vilma Inimiga] Ao ser eliminada, ${prev.name} comprou uma carta de FOGO com +5 de Poder!`,
                   'spell'
@@ -5924,7 +6013,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     evaluateKalielSide(opponent.board, setOpponent, opponent.name, 'opponent');
   }, [player.board, opponent.board, player.name, opponent.name, votoSilencioActive, gameOverWinner, addLog, queueUnitVfx]);
 
-  // Claim one-time +250 Gold reward automatically when winning the Interactive Tutorial
+  // Claim one-time +250 Gold + 1 Surprise Free Common Pack automatically when winning the Interactive Tutorial
   useEffect(() => {
     if (!isTutorialMode || gameOverWinner !== 'player') return;
     if (tutorialRewardClaimAttemptedRef.current) return;
@@ -5934,6 +6023,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         setTutorialRewardResult({
           claimedNow: res.claimedNow,
           goldAwarded: res.goldAwarded,
+          freeCommonPacksAwarded: res.freeCommonPacksAwarded,
         });
       })
       .catch((err) => {
@@ -6682,7 +6772,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     if (card.templateId === 'm_caspiem' && aliveAllies.length > 0) return 'target';
     if (card.templateId === 'n_mesmerino' && aliveAllies.length > 0) return 'target';
     if ((card.templateId === 'm_umael' || card.name.toLowerCase().includes('umael')) && aliveAllies.some((c) => c.instanceId !== card.instanceId)) return 'target';
-    if ((card.templateId === 'm_fanx' || card.name.toLowerCase().includes('fanx')) && aliveAllies.length > 0) return 'target';
+    if ((card.templateId === 'm_fanx' || card.name.toLowerCase().includes('fanx') || card.name.toLowerCase().includes('fanael')) && aliveAllies.length > 0) return 'target';
     if ((card.templateId === 'm_cavaleiro_sem_nome' || card.name.toLowerCase().includes('cavaleiro sem nome')) && aliveAllies.length > 0) return 'target';
     if ((card.templateId === 'n_nulio' || card.name.toLowerCase() === 'nulio') && aliveAllies.length > 0) return 'target';
     if ((card.templateId === 'g_vergor' || card.name.toLowerCase() === 'vergor') && aliveEnemies.length > 0) return 'target';
@@ -6802,11 +6892,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           isHandFull ? `[data-graveyard="${casterSide}"]` : `[data-hand-zone="${casterSide}"]`
         );
 
-        queueUnitVfx({
-          type: 'bia_furto_feerico',
-          sourceId: card.instanceId,
-          ownerSide: allySide,
-        });
         queueConditionVfx([
           {
             condition: 'capturar',
@@ -6955,6 +7040,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             nextDeck = remainingDeck;
             nextHand = [...nextHand, autoDrawn];
             setDrawingCardAnim({ card: autoDrawn, ownerId });
+            queueUnitVfx({
+              type: 'mago_uhr_draw_arcana',
+              sourceId: card.instanceId,
+              targetIds: [card.instanceId],
+              ownerSide: allySide,
+            });
             addLog(`🧙‍♂️ Mago Uhr foi invocado: comprou ${autoDrawn.name} automaticamente!`, 'spell');
           }
         } else {
@@ -7003,8 +7094,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           card.conditions.add('cura');
           setCardConditionSource(card, 'cura', 'efeito_unico_proprio', card.name);
           card.curaTurnsRemaining = 2;
-          card.hp = Math.min(card.maxHp, card.hp + 5);
-          checkCharmagonBuff(card);
+          card.healingAmount = card.healingAmount ?? 9;
+          if (!hasCorrosao(card)) {
+            card.hp = Math.min(card.maxHp, card.hp + 5);
+            checkCharmagonBuff(card);
+          }
+          queueConditionVfx([{ condition: 'cura', targetUnitId: card.instanceId, targetUnitName: card.name, targetSide: allySide }]);
           addLog(`👑 Rainha Liz aplicou a condição Cura por 2 rodadas a si mesma!`, 'spell');
         } else {
           setTargetModal({
@@ -7017,8 +7112,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               firstTarget.conditions.add('cura');
               setCardConditionSource(firstTarget, 'cura', firstOriginKind, card.name);
               firstTarget.curaTurnsRemaining = 2;
-              firstTarget.hp = Math.min(firstTarget.maxHp, firstTarget.hp + 5);
-              checkCharmagonBuff(firstTarget);
+              firstTarget.healingAmount = firstTarget.healingAmount ?? 9;
+              if (!hasCorrosao(firstTarget)) {
+                firstTarget.hp = Math.min(firstTarget.maxHp, firstTarget.hp + 5);
+                checkCharmagonBuff(firstTarget);
+              }
+              queueConditionVfx([{ condition: 'cura', targetUnitId: firstTarget.instanceId, targetUnitName: firstTarget.name, targetSide: allySide }]);
               addLog(`👑 Rainha Liz concedeu a condição Cura por 2 rodadas para ${firstTarget.name}!`, 'spell');
               setTimeout(() => {
                 setTargetModal({
@@ -7031,8 +7130,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     secondTarget.conditions.add('cura');
                     setCardConditionSource(secondTarget, 'cura', secondOriginKind, card.name);
                     secondTarget.curaTurnsRemaining = 2;
-                    secondTarget.hp = Math.min(secondTarget.maxHp, secondTarget.hp + 5);
-                    checkCharmagonBuff(secondTarget);
+                    secondTarget.healingAmount = secondTarget.healingAmount ?? 9;
+                    if (!hasCorrosao(secondTarget)) {
+                      secondTarget.hp = Math.min(secondTarget.maxHp, secondTarget.hp + 5);
+                      checkCharmagonBuff(secondTarget);
+                    }
+                    queueConditionVfx([{ condition: 'cura', targetUnitId: secondTarget.instanceId, targetUnitName: secondTarget.name, targetSide: allySide }]);
                     addLog(`👑 Rainha Liz concedeu a condição Cura por 2 rodadas para ${secondTarget.name}!`, 'spell');
                     setTargetModal((prev) => ({ ...prev, isOpen: false }));
                     setState((prev) => ({
@@ -7106,18 +7209,28 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         const sorted = [...candidates].sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp));
         const t1 = sorted[0] || card;
         const t2 = sorted[1] || sorted[0] || card;
+        const lizCuraBatch: Array<Omit<ConditionVfxEvent, 'id'>> = [];
         t1.conditions.add('cura');
         setCardConditionSource(t1, 'cura', t1.instanceId === card.instanceId ? 'efeito_unico_proprio' : 'unidade_compartilhada', card.name);
         t1.curaTurnsRemaining = 2;
-        t1.hp = Math.min(t1.maxHp, t1.hp + 5);
-        checkCharmagonBuff(t1);
+        t1.healingAmount = t1.healingAmount ?? 9;
+        if (!hasCorrosao(t1)) {
+          t1.hp = Math.min(t1.maxHp, t1.hp + 5);
+          checkCharmagonBuff(t1);
+        }
+        lizCuraBatch.push({ condition: 'cura', targetUnitId: t1.instanceId, targetUnitName: t1.name, targetSide: allySide });
         if (t2 && t2 !== t1) {
           t2.conditions.add('cura');
           setCardConditionSource(t2, 'cura', t2.instanceId === card.instanceId ? 'efeito_unico_proprio' : 'unidade_compartilhada', card.name);
           t2.curaTurnsRemaining = 2;
-          t2.hp = Math.min(t2.maxHp, t2.hp + 5);
-          checkCharmagonBuff(t2);
+          t2.healingAmount = t2.healingAmount ?? 9;
+          if (!hasCorrosao(t2)) {
+            t2.hp = Math.min(t2.maxHp, t2.hp + 5);
+            checkCharmagonBuff(t2);
+          }
+          lizCuraBatch.push({ condition: 'cura', targetUnitId: t2.instanceId, targetUnitName: t2.name, targetSide: allySide });
         }
+        queueConditionVfx(lizCuraBatch);
         addLog(`👑 Rainha Liz concedeu a condição Cura por 2 rodadas a 2 unidades aliadas!`, 'spell');
       }
     }
@@ -7282,6 +7395,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         if (drawnCopy.element === 'Gelo') {
           addPowerPoints(drawnCopy, 5);
           sound.playSpell();
+          const handRect = getVisibleDomRect(`[data-hand-zone="${allySide}"]`);
+          queueUnitVfx({
+            type: 'celia_frost_bonus',
+            sourceId: card.instanceId,
+            targetIds: [card.instanceId],
+            targetPoints: handRect
+              ? [{ x: handRect.left + handRect.width / 2, y: handRect.top + handRect.height / 2, w: 120, h: 165 }]
+              : undefined,
+            ownerSide: allySide,
+          });
           addLog(
             `❄️✨ [Celia, a Bruxa do Gelo] Comprou ${drawnCopy.name} e, por ser da classe GELO, concedeu +5 de Poder a ela (Novo Poder: ${drawnCopy.power})!`,
             'spell'
@@ -7326,6 +7449,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             target.conditions.add('atordoado');
             setCardConditionSource(target, 'atordoado', 'unidade_inimiga', card.name);
             sound.playSpell();
+            queueConditionVfx([{ condition: 'atordoamento', targetUnitId: target.instanceId, targetUnitName: target.name, targetSide: enemySide }]);
             addLog(`💧⚡ [Guadan] Atordoou ${target.name} por 1 rodada!`, 'spell');
             setOpposite((opp) => ({
               ...opp,
@@ -7355,6 +7479,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             chosen.conditions.add('atordoado');
             setCardConditionSource(chosen, 'atordoado', 'unidade_inimiga', card.name);
             sound.playSpell();
+            queueConditionVfx([{ condition: 'atordoamento', targetUnitId: chosen.instanceId, targetUnitName: chosen.name, targetSide: enemySide }]);
             addLog(`💧⚡ [Guadan] Atordoou ${chosen.name} por 1 rodada!`, 'spell');
             setOpposite((opp) => ({
               ...opp,
@@ -7395,6 +7520,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             target.barreiraRoundsRemaining = undefined;
             sound.playSpell();
             triggerSkillVfx('n_voto_estrelas', allySide, target.instanceId, target.name, true);
+            queueConditionVfx([{ condition: 'barreira', targetUnitId: target.instanceId, targetUnitName: target.name, targetSide: allySide }]);
             addLog(`❄️🛡️ [Aurora] Concedeu BARREIRA DE GELO para ${target.name} (ativa até que seja quebrada)!`, 'spell');
             setTargetModal((prev) => ({ ...prev, isOpen: false }));
             setState((prev) => ({
@@ -7424,6 +7550,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         bestTarget.barreiraRoundsRemaining = undefined;
         sound.playSpell();
         triggerSkillVfx('n_voto_estrelas', allySide, bestTarget.instanceId, bestTarget.name, true);
+        queueConditionVfx([{ condition: 'barreira', targetUnitId: bestTarget.instanceId, targetUnitName: bestTarget.name, targetSide: allySide }]);
         addLog(`❄️🛡️ [Aurora] Concedeu BARREIRA DE GELO para ${bestTarget.name} (ativa até que seja quebrada)!`, 'spell');
         setState((prev) => ({
           ...prev,
@@ -7480,7 +7607,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           if (u.conditions.has('imunidade') || isCeliaImmune || isSolImmortal) {
             surviving.push(u);
             if (isCeliaImmune) {
-              addLog(`❄️🛡️ [Celia] Imune a dano de GELO: resistiu à tempestade de gelo de Juci!`, 'info');
+              queueUnitVfx({
+                type: 'celia_ice_barrier',
+                sourceId: u.instanceId,
+                targetIds: [u.instanceId],
+                ownerSide: enemySide,
+              });
+              addLog(`❄️🛡️ [Celia] Barreira gélida ativada: imune a dano de GELO da tempestade de Juci!`, 'info');
             }
             return;
           }
@@ -7540,11 +7673,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       const hasOtherWater = currentBoard.some((c) => c.element === 'Água' && c.instanceId !== card.instanceId && c.hp > 0);
       if (hasOtherWater) {
         sound.playSpell();
-        queueUnitVfx({
-          type: 'vanusa_reveal',
-          sourceId: card.instanceId,
-          ownerSide: allySide,
-        });
+        queueConditionVfx([
+          {
+            condition: 'revelar',
+            targetUnitId: card.instanceId,
+            targetUnitName: card.name,
+            targetSide: allySide,
+          },
+        ]);
         addLog(`💧 Vanusa ativou REVELAR (sinergia com unidade de Água em campo)!`, 'spell');
         if (isInteractiveUser) {
           setTimeout(() => triggerInteractiveReveal(ownerId), 120);
@@ -7554,132 +7690,106 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       }
     }
 
-    // Cristalys: Ao ser invocada cura 6 de vida de um aliado a escolha (apenas vida)
+    // Cristalys: Ao ser invocada selecione uma unidade aliada, ou si mesma, para receber CURA por 2 rodadas (ativa instantaneamente ao ser aplicada)
     if (card.templateId === 'n_cristalys') {
       const currentBoard = explicitBoard || (isPlayer ? playerRef.current.board : opponentRef.current.board);
       const candidates = currentBoard.filter((c) => c.hp > 0);
+      const applyCristalysCura = (target: CardInstance) => {
+        const originKind = target.instanceId === card.instanceId ? 'efeito_unico_proprio' : 'unidade_compartilhada';
+        const healAmount = target.healingAmount ?? 9;
+        target.conditions.add('cura');
+        setCardConditionSource(target, 'cura', originKind, card.name);
+        target.healingAmount = healAmount;
+        // 2 rodadas no total: 1ª rodada ativa instantaneamente agora, restando 1 rodada para o próximo início de rodada
+        target.curaTurnsRemaining = Math.max(target.curaTurnsRemaining || 0, 1);
+
+        sound.playSpell();
+        queueUnitVfx({
+          type: 'cristalys_aqua_heal',
+          sourceId: card.instanceId,
+          targetIds: [target.instanceId],
+          ownerSide: allySide,
+        });
+        queueConditionVfx([
+          {
+            condition: 'cura',
+            targetUnitId: target.instanceId,
+            targetUnitName: target.name,
+            targetSide: allySide,
+          },
+        ]);
+
+        if (hasCorrosao(target)) {
+          addLog(
+            `🧪🚫 [Corrosão] ${target.name} recebeu CURA de Cristalys (1 rodada restante), mas a ativação instantânea foi cortada pela Corrosão!`,
+            'info'
+          );
+        } else {
+          target.hp = Math.min(target.maxHp, target.hp + healAmount);
+          addLog(
+            `💧🧚 [Cristalys, a Fada] Aplicou CURA por 2 rodadas em ${target.name} (ativação instantânea: +${healAmount} Vida → ${target.hp}/${target.maxHp}; +1 rodada restante)!`,
+            'spell'
+          );
+          const isCharmagon =
+            (target.templateId === 'n_charmagon' || target.templateId === 'm_charmagon' || target.name.toLowerCase().includes('charmagon')) &&
+            target.silencedRounds === 0;
+          if (isCharmagon) {
+            target.atk += 3;
+            target.baseAtk += 3;
+            addPowerPoints(target, 3);
+            addLog(`🐉 [Charmagon] Recebeu Cura de Cristalys, a Fada e ganhou +3 de Ataque e +3 de Poder (Atk: ${target.atk}, Poder: ${target.power})!`, 'spell');
+          }
+        }
+
+        setState((prev) => ({
+          ...prev,
+          board: prev.board.map((c) => {
+            if (c.instanceId !== target.instanceId) return c;
+            const conds = new Set(c.conditions);
+            conds.add('cura');
+            return {
+              ...c,
+              hp: target.hp,
+              maxHp: target.maxHp,
+              atk: target.atk,
+              baseAtk: target.baseAtk,
+              def: target.def,
+              baseDef: target.baseDef,
+              icePeakDefense: target.icePeakDefense,
+              icePowerDefGranted: target.icePowerDefGranted,
+              teluricoPowerHpGranted: target.teluricoPowerHpGranted,
+              teluricoPowerDefGranted: target.teluricoPowerDefGranted,
+              neutroPowerHpGranted: target.neutroPowerHpGranted,
+              neutroPowerAtkGranted: target.neutroPowerAtkGranted,
+              neutroPowerDefGranted: target.neutroPowerDefGranted,
+              power: target.power,
+              basePower: target.basePower,
+              peakPower: target.peakPower,
+              votoSilencioSavedPower: target.votoSilencioSavedPower,
+              conditions: conds,
+              conditionSources: withConditionSource(c.conditionSources, 'cura', originKind, card.name),
+              healingAmount: healAmount,
+              curaTurnsRemaining: Math.max(c.curaTurnsRemaining || 0, 1),
+            };
+          }),
+        }));
+      };
+
       if (isInteractiveUser && candidates.length > 0) {
         setTargetModal({
           isOpen: true,
-          title: 'Cristalys, a Fada - Orvalho Sagrado',
-          description: `Escolha uma unidade aliada de ${isPlayer ? player.name : opponent.name} para restaurar 6 de Vida:`,
+          title: 'Cristalys, a Fada - Banho Curativo',
+          description: `Escolha uma unidade aliada de ${isPlayer ? player.name : opponent.name} (ou a própria Cristalys) para receber CURA por 2 rodadas (ativa instantaneamente):`,
           candidates,
           onSelect: (target) => {
-            if (hasCorrosao(target)) {
-              sound.playSpell();
-              addLog(`🧪🚫 [Corrosão] ${target.name} está sob efeito de Corrosão e teve toda a cura de Cristalys cortada!`, 'info');
-              setTargetModal((prev) => ({ ...prev, isOpen: false }));
-              flushPendingSummonTargetTurn();
-              return;
-            }
-            target.hp = Math.min(target.maxHp, target.hp + 6);
-            sound.playSpell();
-            queueUnitVfx({
-              type: 'cristalys_aqua_heal',
-              sourceId: card.instanceId,
-              targetIds: [target.instanceId],
-              ownerSide: allySide,
-            });
-            queueConditionVfx([
-              {
-                condition: 'cura',
-                targetUnitId: target.instanceId,
-                targetUnitName: target.name,
-                targetSide: allySide,
-              },
-            ]);
-            addLog(`💧 Cristalys, a Fada restaurou 6 de Vida de ${target.name} (Vida: ${target.hp}/${target.maxHp})!`, 'spell');
-            const isCharmagon =
-              (target.templateId === 'n_charmagon' || target.templateId === 'm_charmagon' || target.name.toLowerCase().includes('charmagon')) &&
-              target.silencedRounds === 0;
-            if (isCharmagon) {
-              target.atk += 3;
-              target.baseAtk += 3;
-              addPowerPoints(target, 3);
-              addLog(`🐉 [Charmagon] Recebeu Cura de Cristalys, a Fada e ganhou +3 de Ataque e +3 de Poder (Atk: ${target.atk}, Poder: ${target.power})!`, 'spell');
-            }
+            applyCristalysCura(target);
             setTargetModal((prev) => ({ ...prev, isOpen: false }));
-            setState((prev) => ({
-              ...prev,
-              board: prev.board.map((c) =>
-                c.instanceId === target.instanceId
-                  ? {
-                      ...c,
-                      hp: target.hp,
-                      maxHp: target.maxHp,
-                      atk: target.atk,
-                      baseAtk: target.baseAtk,
-                      def: target.def,
-                      baseDef: target.baseDef,
-                      icePeakDefense: target.icePeakDefense,
-                      icePowerDefGranted: target.icePowerDefGranted,
-                      teluricoPowerHpGranted: target.teluricoPowerHpGranted,
-                      teluricoPowerDefGranted: target.teluricoPowerDefGranted,
-                      neutroPowerHpGranted: target.neutroPowerHpGranted,
-                      neutroPowerAtkGranted: target.neutroPowerAtkGranted,
-                      neutroPowerDefGranted: target.neutroPowerDefGranted,
-                      power: target.power,
-                      basePower: target.basePower,
-                      peakPower: target.peakPower,
-                      votoSilencioSavedPower: target.votoSilencioSavedPower,
-                    }
-                  : c
-              ),
-            }));
             flushPendingSummonTargetTurn();
           },
         });
-      } else {
+      } else if (candidates.length > 0) {
         const lowest = [...candidates].sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0] || card;
-        if (hasCorrosao(lowest)) {
-          addLog(`🧪🚫 [Corrosão] ${lowest.name} está sob efeito de Corrosão e teve toda a cura de Cristalys cortada!`, 'info');
-        } else {
-          lowest.hp = Math.min(lowest.maxHp, lowest.hp + 6);
-          sound.playSpell();
-          queueUnitVfx({
-            type: 'cristalys_aqua_heal',
-            sourceId: card.instanceId,
-            targetIds: [lowest.instanceId],
-            ownerSide: allySide,
-          });
-          addLog(`💧 Cristalys, a Fada restaurou 6 de Vida de ${lowest.name}!`, 'spell');
-          const isCharmagon =
-            (lowest.templateId === 'n_charmagon' || lowest.templateId === 'm_charmagon' || lowest.name.toLowerCase().includes('charmagon')) &&
-            lowest.silencedRounds === 0;
-          if (isCharmagon) {
-            lowest.atk += 3;
-            lowest.baseAtk += 3;
-            addPowerPoints(lowest, 3);
-            addLog(`🐉 [Charmagon] Recebeu Cura de Cristalys, a Fada e ganhou +3 de Ataque e +3 de Poder!`, 'spell');
-          }
-        }
-        setState((prev) => ({
-          ...prev,
-          board: prev.board.map((c) =>
-            c.instanceId === lowest.instanceId
-              ? {
-                  ...c,
-                  hp: lowest.hp,
-                  maxHp: lowest.maxHp,
-                  atk: lowest.atk,
-                  baseAtk: lowest.baseAtk,
-                  def: lowest.def,
-                  baseDef: lowest.baseDef,
-                  icePeakDefense: lowest.icePeakDefense,
-                  icePowerDefGranted: lowest.icePowerDefGranted,
-                  teluricoPowerHpGranted: lowest.teluricoPowerHpGranted,
-                  teluricoPowerDefGranted: lowest.teluricoPowerDefGranted,
-                  neutroPowerHpGranted: lowest.neutroPowerHpGranted,
-                  neutroPowerAtkGranted: lowest.neutroPowerAtkGranted,
-                  neutroPowerDefGranted: lowest.neutroPowerDefGranted,
-                  power: lowest.power,
-                  basePower: lowest.basePower,
-                  peakPower: lowest.peakPower,
-                  votoSilencioSavedPower: lowest.votoSilencioSavedPower,
-                }
-              : c
-          ),
-        }));
+        applyCristalysCura(lowest);
       }
     }
 
@@ -7926,6 +8036,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             setCardConditionSource(target, 'imunidade', originKind, card.name);
             target.immunedRounds = 2;
             sound.playSpell();
+            queueConditionVfx([{ condition: 'imunidade', targetUnitId: target.instanceId, targetUnitName: target.name, targetSide: allySide }]);
             addLog(`❄️🌟 [Crizelia] Concedeu IMUNIDADE por 2 rodadas para ${target.name}!`, 'spell');
             setTargetModal((prev) => ({ ...prev, isOpen: false }));
             setState((prev) => ({
@@ -7954,6 +8065,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         setCardConditionSource(bestTarget, 'imunidade', originKind, card.name);
         bestTarget.immunedRounds = 2;
         sound.playSpell();
+        queueConditionVfx([{ condition: 'imunidade', targetUnitId: bestTarget.instanceId, targetUnitName: bestTarget.name, targetSide: allySide }]);
         addLog(`❄️🌟 [Crizelia] Concedeu IMUNIDADE por 2 rodadas para ${bestTarget.name}!`, 'spell');
         setState((prev) => ({
           ...prev,
@@ -8013,6 +8125,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             target.conditions.add('furtividade');
             setCardConditionSource(target, 'furtividade', originKind, card.name);
             sound.playSpell();
+            queueConditionVfx([{ condition: 'furtividade', targetUnitId: target.instanceId, targetUnitName: target.name, targetSide: allySide }]);
             addLog(`👤 Caspiem concedeu a condição Furtivo a ${target.name} e recebeu Enfrentar!`, 'spell');
             setTargetModal((prev) => ({ ...prev, isOpen: false }));
             setState((prev) => ({
@@ -8037,6 +8150,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         card.conditions.add('furtividade');
         setCardConditionSource(card, 'furtividade', 'efeito_unico_proprio', card.name);
         sound.playSpell();
+        queueConditionVfx([{ condition: 'furtividade', targetUnitId: card.instanceId, targetUnitName: card.name, targetSide: allySide }]);
         addLog(`👤 Caspiem recebeu a condição Furtivo e Enfrentar!`, 'spell');
       }
     }
@@ -8335,16 +8449,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       }
     }
 
-    // Fanx, o Arcanjo TIER 1: Ao ser invocado escolha uma unidade ou si mesmo para receber +10 a sua VIDA MÁXIMA
-    if (card.templateId === 'm_fanx' || card.name.toLowerCase().includes('fanx')) {
+    // Fanael, o Arcanjo TIER 1 (ex-Fanx): Ao ser invocado escolha uma unidade ou si mesmo para receber +10 a sua VIDA MÁXIMA
+    if (card.templateId === 'm_fanx' || card.name.toLowerCase().includes('fanx') || card.name.toLowerCase().includes('fanael')) {
       card.isArchangel = true;
       const currentBoard = explicitBoard || (isPlayer ? playerRef.current.board : opponentRef.current.board);
       const candidates = currentBoard.filter((c) => c.hp > 0);
       if (isInteractiveUser && candidates.length > 0) {
         setTargetModal({
           isOpen: true,
-          title: 'Fanx, o Arcanjo - Bênção das Águas',
-          description: 'Selecione uma unidade aliada (ou o próprio Fanx) para receber +10 de Vida Máxima:',
+          title: 'Fanael, o Arcanjo - Bênção das Águas',
+          description: 'Selecione uma unidade aliada (ou o próprio Fanael) para receber +10 de Vida Máxima:',
           candidates,
           onSelect: (target) => {
             target.maxHp += 10;
@@ -8360,7 +8474,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               targetIds: [target.instanceId],
               ownerSide: allySide,
             });
-            addLog(`🌊👼 Fanx, o Arcanjo concedeu +10 de Vida Máxima para ${target.name} (Vida Atual: ${target.hp}/${target.maxHp})!`, 'spell');
+            addLog(`🌊👼 Fanael, o Arcanjo concedeu +10 de Vida Máxima para ${target.name} (Vida Atual: ${target.hp}/${target.maxHp})!`, 'spell');
             setTargetModal((prev) => ({ ...prev, isOpen: false }));
             setState((prev) => ({
               ...prev,
@@ -8390,7 +8504,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           targetIds: [bestTarget.instanceId],
           ownerSide: allySide,
         });
-        addLog(`🌊👼 Fanx, o Arcanjo concedeu +10 de Vida Máxima para ${bestTarget.name} (Vida Atual: ${bestTarget.hp}/${bestTarget.maxHp})!`, 'spell');
+        addLog(`🌊👼 Fanael, o Arcanjo concedeu +10 de Vida Máxima para ${bestTarget.name} (Vida Atual: ${bestTarget.hp}/${bestTarget.maxHp})!`, 'spell');
         setState((prev) => ({
           ...prev,
           board: prev.board.map((c) => c.instanceId === bestTarget.instanceId ? {
@@ -9370,6 +9484,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             const isTargetVilmaImmune =
               (target.templateId === 'm_vilma' || target.name.toLowerCase().includes('vilma')) &&
               target.silencedRounds === 0;
+            if (isTargetVilmaImmune) {
+              queueUnitVfx({
+                type: 'vilma_fire_barrier',
+                sourceId: target.instanceId,
+                targetIds: [target.instanceId],
+                ownerSide: enemySide,
+              });
+            }
             let flareDamage = isTargetVilmaImmune ? 0 : 5;
             if (flareDamage > 0) {
               if (target.conditions.has('congelado')) flareDamage = Math.round(flareDamage * 1.5);
@@ -10378,6 +10500,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             hand: [...prev.hand, flechaCard],
           }));
           sound.playSpell();
+          queueUnitVfx({
+            type: 'gough_arrow_forge',
+            sourceId: gough.instanceId,
+            targetIds: [gough.instanceId],
+            ownerSide: isPlayer ? 'player' : 'opponent',
+          });
           addLog(
             `🏹⚡ [Gough] Gerou Flecha Elétrica (Fugaz) na mão de ${isPlayer ? player.name : opponent.name} reagindo ao uso de habilidade aliada!`,
             'spell'
@@ -11738,8 +11866,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           addLog(`🌟 [IMUNIDADE] ${target.name} bloqueou a Flecha Elétrica!`, 'spell');
           return;
         }
-        setProjectileAnim({ type: 'flecha_eletrica', targetName: target.name });
-        setTimeout(() => setProjectileAnim(null), 1000);
 
         sound.playSpell();
         const enemySetter = isPlayer ? setOpponent : setPlayer;
@@ -11905,10 +12031,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           target.conditions.add('entorpecer');
           setCardConditionSource(target, 'entorpecer', 'habilidade', card.name);
           target.entorpecerRoundsRemaining = 2;
+          queueConditionVfx([{ condition: 'torpor', targetUnitId: target.instanceId, targetUnitName: target.name, targetSide: enemySide }]);
           return;
         }
 
-        if (!isVilmaImmune) {
+        if (isVilmaImmune) {
+          queueUnitVfx({
+            type: 'vilma_fire_barrier',
+            sourceId: target.instanceId,
+            targetIds: [target.instanceId],
+            ownerSide: enemySide,
+          });
+          addLog(`🔥🛡️ [Vilma] Barreira ígnea ativada: imune ao dano de Fogo de Labareda solar!`, 'info');
+        } else {
           let damage = 8;
           if (target.conditions.has('congelado')) damage = Math.round(damage * 1.5);
           if (target.conditions.has('tenacidade')) damage = Math.max(0, Math.round(damage * 0.65));
@@ -11998,6 +12133,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
         const enemySetter = isPlayer ? setOpponent : setPlayer;
         let killedCount = 0;
+        const crioFreezeBatch: Array<Omit<ConditionVfxEvent, 'id'>> = [];
         enemySetter((prevEnemy) => {
           const surviving: CardInstance[] = [];
           const newlyDead: CardInstance[] = [];
@@ -12011,6 +12147,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               u.level === 2;
 
             if (u.conditions.has('imunidade') || isCeliaImmune || isSolImmortal) {
+              if (isCeliaImmune) {
+                queueUnitVfx({
+                  type: 'celia_ice_barrier',
+                  sourceId: u.instanceId,
+                  targetIds: [u.instanceId],
+                  ownerSide: targetSide,
+                });
+                addLog(`❄️🛡️ [Celia] Barreira gélida ativada: imune a dano de GELO de Crio-gênese!`, 'info');
+              }
               surviving.push(u);
               return;
             }
@@ -12037,6 +12182,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             u.conditions.add('congelado');
             setCardConditionSource(u, 'congelado', 'habilidade', card.name);
             u.freezeRoundsRemaining = Math.max(u.freezeRoundsRemaining || 0, 2);
+            crioFreezeBatch.push({ condition: 'congelado', targetUnitId: u.instanceId, targetUnitName: u.name, targetSide });
 
             if (u.hp <= 0) {
               newlyDead.push(u);
@@ -12045,6 +12191,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               surviving.push(u);
             }
           });
+
+          if (crioFreezeBatch.length > 0) queueConditionVfx(crioFreezeBatch);
 
           return {
             ...prevEnemy,
@@ -13732,6 +13880,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       );
       results.push(res);
 
+      if (res.elementalImmunityTriggers && res.elementalImmunityTriggers.length > 0) {
+        const defSide: 'player' | 'opponent' = attackingPlayerId === 'player' ? 'opponent' : 'player';
+        res.elementalImmunityTriggers.forEach((trig) => {
+          const trigSide = trig.side === 'attacker' ? attackingPlayerId : defSide;
+          queueUnitVfx({
+            type: trig.element === 'Gelo' ? 'celia_ice_barrier' : 'vilma_fire_barrier',
+            sourceId: trig.targetId,
+            targetIds: [trig.targetId],
+            ownerSide: trigSide,
+          });
+        });
+      }
+
       // Se Lunario subiu para o Nível 2 ao defender o 2º ataque:
       if (
         defWasLvl1 &&
@@ -13905,7 +14066,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         directDamageTotal += res.directPlayerDamage;
 
         // Finn, o Fada:
-        // "A PRIMEIRA VEZ que Finn atacar a vida do jogador inimigo aumenta +1 da vida máxima do jogador aliado."
+        // "A PRIMEIRA VEZ que Finn atacar a vida do jogador inimigo aumenta permanentemente +1 à Vida Máxima e concede +1 de Vida atual ao jogador aliado."
         if (
           (currentAtkInstance.templateId === 'm_finn' || currentAtkInstance.name.toLowerCase().includes('finn')) &&
           currentAtkInstance.silencedRounds === 0 &&
@@ -13918,6 +14079,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             ...prev,
             maxHp: prev.maxHp + 1,
             hp: prev.hp + 1,
+            finnFairyHpSlots: (prev.finnFairyHpSlots || 0) + 1,
           }));
           sound.playSpell();
           queueUnitVfx({
@@ -13927,7 +14089,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             ownerSide: attackingPlayerId,
           });
           addLog(
-            `🧚🌿 [Finn, o Fada] Atingiu a vida do jogador inimigo pela 1ª vez e aumentou +1 da Vida Máxima de ${friendlyState.name}!`,
+            `🧚🌿 [Finn, o Fada] Atingiu a vida do jogador inimigo pela 1ª vez e concedeu permanentemente +1 à Vida Máxima e +1 de Vida atual para ${friendlyState.name} (barra extra feérica)!`,
             'spell'
           );
         }
@@ -14137,6 +14299,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     deadAttackers.forEach((c) => {
       if (c.templateId === 'g_karlo') {
         const exp = triggerKarloExplosion(c, survivingDefenders, votoSilencioActive);
+        if (exp.blockedVilmaIds && exp.blockedVilmaIds.length > 0) {
+          exp.blockedVilmaIds.forEach((vid) => {
+            queueUnitVfx({
+              type: 'vilma_fire_barrier',
+              sourceId: vid,
+              targetIds: [vid],
+              ownerSide: defendingPlayerId,
+            });
+          });
+        }
         if (exp.damageDealt > 0) {
           sound.playDeath();
           queueUnitVfx({
@@ -14155,6 +14327,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       }
       if (c.templateId === 'm_kore') {
         const res = triggerKoreDeath(c, survivingDefenders);
+        if (res.blockedCeliaIds && res.blockedCeliaIds.length > 0) {
+          res.blockedCeliaIds.forEach((cid) => {
+            queueUnitVfx({
+              type: 'celia_ice_barrier',
+              sourceId: cid,
+              targetIds: [cid],
+              ownerSide: defendingPlayerId,
+            });
+          });
+        }
         if (res.damageDealt > 0) {
           sound.playDeath();
           queueUnitVfx({
@@ -14176,6 +14358,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     deadDefenders.forEach((c) => {
       if (c.templateId === 'g_karlo') {
         const exp = triggerKarloExplosion(c, survivingAttackers, votoSilencioActive);
+        if (exp.blockedVilmaIds && exp.blockedVilmaIds.length > 0) {
+          exp.blockedVilmaIds.forEach((vid) => {
+            queueUnitVfx({
+              type: 'vilma_fire_barrier',
+              sourceId: vid,
+              targetIds: [vid],
+              ownerSide: attackingPlayerId,
+            });
+          });
+        }
         if (exp.damageDealt > 0) {
           sound.playDeath();
           queueUnitVfx({
@@ -14194,6 +14386,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       }
       if (c.templateId === 'm_kore') {
         const res = triggerKoreDeath(c, survivingAttackers);
+        if (res.blockedCeliaIds && res.blockedCeliaIds.length > 0) {
+          res.blockedCeliaIds.forEach((cid) => {
+            queueUnitVfx({
+              type: 'celia_ice_barrier',
+              sourceId: cid,
+              targetIds: [cid],
+              ownerSide: attackingPlayerId,
+            });
+          });
+        }
         if (res.damageDealt > 0) {
           sound.playDeath();
           queueUnitVfx({
@@ -15208,25 +15410,40 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           hasAttackedThisRound
         );
 
-        // Tutorial Mode: Curated 100%-winnable Instructor AI (gives real attack & defense practice without ever overwhelming or defeating the learner)
+        // Tutorial Mode: Curated 100%-winnable Instructor AI that ALWAYS attacks on its attacking round so Step 4B (Defense) works reliably
         if (isTutorialMode) {
+          const readyAiAttackers = opponent.board.filter(
+            (u) =>
+              !u.conditions.has('atordoado') &&
+              !u.conditions.has('dormindo') &&
+              u.templateId !== 'm_lamina_inverno' &&
+              u.templateId !== 'n_pedrinha'
+          );
+          const isInstructorAttacker = attackerRole === 'opponent' && !hasAttackedThisRound;
+          const needsDefensePracticeAttack = playerDefenseCompletedCount === 0;
+          const canInstructorAttackNow =
+            isInstructorAttacker &&
+            readyAiAttackers.length > 0 &&
+            (player.hp > 2 || needsDefensePracticeAttack);
+
+          const pickSingleInstructorAttack = () => {
+            const sortedWeakest = [...readyAiAttackers].sort((a, b) => a.atk - b.atk);
+            return { type: 'attack' as const, attackerIds: [sortedWeakest[0].instanceId] };
+          };
+
           if (action.type === 'cast_spell') {
-            action = { type: 'pass' };
-          } else if (action.type === 'summon' && (opponent.summonsThisRound >= 1 || opponent.board.length >= 2)) {
-            action = { type: 'pass' };
-          } else if (action.type === 'attack') {
-            if (player.hp <= 2) {
-              // Anti-lethal guard: learner can never lose the tutorial
+            action = canInstructorAttackNow ? pickSingleInstructorAttack() : { type: 'pass' };
+          } else if (action.type === 'summon') {
+            if (canInstructorAttackNow && (opponent.summonsThisRound >= 1 || opponent.board.length >= 1)) {
+              // Instructor already has a unit on board while Attacking -> attack immediately so the learner practices Defense!
+              action = pickSingleInstructorAttack();
+            } else if (opponent.board.length >= 2 || opponent.summonsThisRound >= 1) {
               action = { type: 'pass' };
-            } else if (action.attackerIds && action.attackerIds.length > 1) {
-              // Attack with 1 unit so learner practices blocking cleanly
-              const sortedWeakest = [...opponent.board]
-                .filter((u) => action.attackerIds!.includes(u.instanceId))
-                .sort((a, b) => a.atk - b.atk);
-              action = sortedWeakest.length > 0
-                ? { type: 'attack', attackerIds: [sortedWeakest[0].instanceId] }
-                : { type: 'pass' };
             }
+          } else if (action.type === 'attack') {
+            action = canInstructorAttackNow ? pickSingleInstructorAttack() : { type: 'pass' };
+          } else if (action.type === 'pass' && canInstructorAttackNow) {
+            action = pickSingleInstructorAttack();
           }
         }
 
@@ -15386,6 +15603,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     targetModal.isOpen,
     pendingBarelioRecaptureQueue.length,
     isBusyByAnimation,
+    isTutorialMode,
+    playerDefenseCompletedCount,
   ]);
 
   // ----------------------------------------------------
@@ -15446,6 +15665,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       borRevivedOnce: false,
       zaelUsed: false,
       purpleExtraHpSlots: 0,
+      finnFairyHpSlots: 0,
     });
 
     setOpponent({
@@ -15472,6 +15692,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       borRevivedOnce: false,
       zaelUsed: false,
       purpleExtraHpSlots: 0,
+      finnFairyHpSlots: 0,
     });
 
     roundRef.current = 1;
@@ -15885,35 +16106,41 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         setPendingSpell(nextPendingSpell);
 
         if (snap.gameOverWinner !== null && !gameOverWinner && !finishingCannonAnim?.active && !celestialVictoryAnim?.active) {
-          setGameOverReason(snap.gameOverReason || 'A partida foi finalizada.');
+          const endReasonText = snap.gameOverReason || 'A partida foi finalizada.';
+          setGameOverReason(endReasonText);
           setGameOverWinner(snap.gameOverWinner);
           if (!onlineMatchRecordedRef.current && snap.gameOverWinner !== 'draw') {
             onlineMatchRecordedRef.current = true;
             const isPlayerWin = snap.gameOverWinner === 'player';
-            let delta = 0;
-            if (matchType === 'ranked') {
-              const cloudState = getInMemoryPlayerState();
-              if (cloudState?.rankBlockedTotal) {
-                delta = 0;
-                setRankDelta(0);
-              } else {
-                delta = calculateRankDelta(isPlayerWin, false);
-                setRankDelta(delta);
-                const newPts = Math.max(0, currentRankPoints + delta);
-                setCurrentRankPoints(newPts);
-                saveRankPoints(newPts);
-              }
-            } else {
-              delta = isPlayerWin ? 20 : -10;
+            const modeKey = matchType === 'ranked' ? 'pvp_ranked' : 'pvp_normal';
+
+            if (modeKey !== 'pvp_ranked') {
+              setRankDelta(null);
             }
-            recordMatchResult(
+
+            void recordMatchResult(
               isPlayerWin ? 'victory' : 'defeat',
               onlineMatchBootstrap.localDeckName || 'Meu Baralho',
-              delta,
+              0,
               onlineMatchBootstrap.opponentName,
-              matchType === 'ranked' ? 'pvp_ranked' : 'pvp_normal',
-              onlineMatchBootstrap.opponentRank || 'Bronze III'
-            );
+              modeKey,
+              onlineMatchBootstrap.opponentRank || 'Sem rank',
+              {
+                playerHp: snap.player.hp,
+                playerMaxHp: snap.player.maxHp,
+                opponentHp: snap.opponent.hp,
+                totalRounds: snap.round,
+                endReason: endReasonText,
+              }
+            ).then((synced) => {
+              if (!synced) return;
+              setMatchRewards(synced.rewards);
+              if (modeKey === 'pvp_ranked') {
+                setRankDelta(synced.rewards.rpDeltaApplied);
+                setCurrentRankPoints(synced.player.rankPoints);
+                saveRankPoints(synced.player.rankPoints);
+              }
+            });
           }
         }
 
@@ -16425,38 +16652,37 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     return Boolean(ownerState.canAttackOnDefense);
   };
 
+  const opponentPlaymat: PlaymatTheme =
+    isOnlinePvp && onlineMatchBootstrap?.opponentPlaymat
+      ? onlineMatchBootstrap.opponentPlaymat
+      : 'standard_arena';
+
+  const opponentCardBack: CardBackTheme =
+    isOnlinePvp && onlineMatchBootstrap?.opponentCardBack
+      ? onlineMatchBootstrap.opponentCardBack
+      : 'standard_classic';
+
   const playmatBgClass =
-    playmat === 'celestial_sanctuary'
+    playmat === 'standard_arena'
+      ? 'bg-[#09090d]'
+      : playmat === 'celestial_sanctuary'
       ? 'bg-[#0e0b06]'
       : playmat === 'obsidian_forge'
       ? 'bg-[#0d0507]'
       : playmat === 'classic_slate'
-      ? 'bg-[#09090d]'
+      ? 'bg-[#060910]'
       : 'bg-[#070510]';
 
   return (
     <div className={`relative w-screen h-dvh overflow-hidden ${playmatBgClass} flex flex-col justify-between text-stone-200 select-none font-sans`}>
-      {/* Background Cosmic Nebula & Stars */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(#ffffff18_1px,transparent_1px)] [background-size:24px_24px] opacity-40" />
-        {playmat === 'celestial_sanctuary' ? (
-          <>
-            <div className="absolute -top-1/4 left-1/4 w-[65vw] h-[50vh] bg-gradient-to-br from-amber-900/45 via-yellow-800/20 to-transparent blur-3xl" />
-            <div className="absolute bottom-0 right-1/4 w-[55vw] h-[45vh] bg-gradient-to-tl from-amber-700/30 via-indigo-900/20 to-transparent blur-3xl" />
-          </>
-        ) : playmat === 'obsidian_forge' ? (
-          <>
-            <div className="absolute -top-1/4 left-1/4 w-[65vw] h-[50vh] bg-gradient-to-br from-rose-950/65 via-red-900/30 to-transparent blur-3xl" />
-            <div className="absolute bottom-0 right-1/4 w-[55vw] h-[45vh] bg-gradient-to-tl from-orange-900/35 via-rose-950/25 to-transparent blur-3xl" />
-          </>
-        ) : (
-          <>
-            <div className="absolute -top-1/4 left-1/4 w-[65vw] h-[50vh] bg-gradient-to-br from-indigo-950/70 via-purple-900/35 to-transparent blur-3xl" />
-            <div className="absolute bottom-0 right-1/4 w-[55vw] h-[45vh] bg-gradient-to-tl from-amber-900/30 via-rose-900/20 to-transparent blur-3xl" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[75vw] h-[55vh] bg-[radial-gradient(ellipse_at_center,rgba(59,130,246,0.14)_0%,rgba(147,51,234,0.09)_50%,transparent_80%)] blur-2xl" />
-          </>
-        )}
-      </div>
+      {/* Dual-Territory Arena Playmat Backdrop (Predominant on Owner's Half) */}
+      <ArenaSplitPlaymat
+        playerPlaymat={playmat}
+        opponentPlaymat={opponentPlaymat}
+        animated={ambientAnimations && animationMode === 'full'}
+        reduceBlur={reduceGpuBlur}
+        variant="arena"
+      />
 
       {/* TOP COMMAND & ROUND PROGRESSION HUD BAR */}
       <div
@@ -16626,6 +16852,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               const isPinkFairySlot = Boolean(owner.corteDasFadasUsed && i < (owner.pinkExtraHpSlots || 0));
               const purpleStartIdx = owner.maxHp - (owner.purpleExtraHpSlots || 0);
               const isPurpleSlot = i >= purpleStartIdx;
+              const finnStartIdx = purpleStartIdx - (owner.finnFairyHpSlots || 0);
+              const isFinnFairySlot = !isPurpleSlot && i >= finnStartIdx;
               return (
                 <div
                   key={i}
@@ -16634,6 +16862,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       ? 'Vida Extra Rosa (Corte das Fadas)'
                       : isPurpleSlot
                       ? 'Segmento Extra Roxo (Mipo)'
+                      : isFinnFairySlot
+                      ? 'Segmento Extra Feérico (Finn)'
                       : undefined
                   }
                   className={`flex-1 h-full rounded-[2px] transition-all duration-300 ${
@@ -16643,6 +16873,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       ? isFilled
                         ? 'bg-gradient-to-r from-purple-400 via-fuchsia-500 to-violet-600 shadow-[0_0_5px_#c084fc]'
                         : 'border border-purple-400/50 bg-purple-950/50'
+                      : isFinnFairySlot
+                      ? isFilled
+                        ? 'bg-gradient-to-r from-emerald-300 via-teal-400 to-pink-400 shadow-[0_0_6px_#34d399]'
+                        : 'border border-emerald-400/55 bg-emerald-950/50'
                       : isFilled
                       ? accent === 'opponent'
                         ? 'bg-gradient-to-r from-purple-400 to-rose-500'
@@ -16857,7 +17091,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             {/* Sculpted Battlefield Table (Drag-to-Summon Dropzone) */}
             <div
               ref={mobileBattlefieldDropRef}
-              className={`flex-1 min-h-0 flex flex-col justify-between items-center w-full relative overflow-hidden rounded-2xl border bg-gradient-to-b from-[#140e28]/70 via-[#0a0816]/65 to-[#120d22]/75 px-1.5 py-1 shadow-[inset_0_0_28px_rgba(0,0,0,0.65)] transition-all ${
+              className={`flex-1 min-h-0 flex flex-col justify-between items-center w-full relative overflow-hidden rounded-2xl border bg-[#090712]/55 px-1.5 py-1 shadow-[inset_0_0_28px_rgba(0,0,0,0.65)] transition-all ${
                 mobileDragCard?.isDragging
                   ? mobileDragCard.isOverTable
                     ? mobileDragCard.isPlayable
@@ -16867,6 +17101,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   : 'border-amber-500/30'
               }`}
             >
+              {/* Split Half-Board Playmat Surface inside Mobile Battlefield Table */}
+              <ArenaSplitPlaymat
+                playerPlaymat={playmat}
+                opponentPlaymat={opponentPlaymat}
+                animated={ambientAnimations && animationMode === 'full'}
+                reduceBlur={reduceGpuBlur}
+                variant="table"
+                className="rounded-2xl"
+              />
+
               {/* Active Turn Half-Table Glowing Border (Mobile) */}
               <TableTurnBorderGlow
                 turnPlayer={turnPlayer}
@@ -16877,8 +17121,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               />
 
               {/* Subtle sculpted golden filigree top/bottom rims */}
-              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/55 to-transparent" />
-              <div className="pointer-events-none absolute inset-x-6 bottom-0 h-px bg-gradient-to-r from-transparent via-cyan-400/45 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-amber-400/55 to-transparent z-10" />
+              <div className="pointer-events-none absolute inset-x-6 bottom-0 h-px bg-gradient-to-r from-transparent via-cyan-400/45 to-transparent z-10" />
 
               {mobileDragCard?.isDragging && (
                 <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 px-3 py-1 rounded-full bg-stone-950/95 border border-amber-400/80 text-[10px] font-serif font-bold text-amber-200 shadow-xl whitespace-nowrap">
@@ -16891,7 +17135,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               )}
 
               {/* Opponent Unit Row (Native Crisp MobileBattleCard) */}
-              <div className="w-full flex items-center justify-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto scrollbar-none py-0.5">
+              <div className="relative z-10 w-full flex items-center justify-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto scrollbar-none py-0.5">
                 {Array.from({ length: Math.max(opponent.board.length, opponent.maxBoardSlots ?? 5) }).map((_, slotIdx) => {
                   const card = opponent.board[slotIdx];
                   if (!card) {
@@ -17215,7 +17459,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               {/* Player Unit Row (Native Crisp MobileBattleCard) */}
               <div
                 data-tutorial-target="player-board"
-                className="w-full flex items-center justify-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto scrollbar-none py-0.5"
+                className="relative z-10 w-full flex items-center justify-center gap-1.5 sm:gap-2 shrink-0 overflow-x-auto scrollbar-none py-0.5"
               >
                 {Array.from({ length: Math.max(player.board.length, player.maxBoardSlots ?? 5) }).map((_, slotIdx) => {
                   const card = player.board[slotIdx];
@@ -17871,24 +18115,23 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       handleDrawCard('opponent');
                     }
                   }}
-                  className={`relative w-16 h-22 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
+                  className={`relative w-16 h-22 rounded-xl overflow-hidden transition-all ${
                     isTestingArena
-                      ? 'border-amber-300 bg-gradient-to-br from-purple-900 via-indigo-950 to-stone-950 shadow-[0_0_20px_rgba(251,191,36,0.5)] cursor-pointer hover:scale-105 animate-pulse'
-                      : 'border-purple-500/45 bg-gradient-to-br from-[#1e1538] via-[#110c22] to-[#090612] shadow-lg'
+                      ? 'ring-2 ring-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.5)] cursor-pointer hover:scale-105'
+                      : 'shadow-lg'
                   }`}
-                  title={`Baralho de ${opponent.name}: ${opponent.deck.length} cartas restantes (Clique para comprar)`}
+                  title={`Baralho de ${opponent.name}: ${opponent.deck.length} cartas restantes`}
                 >
-                  <div className="w-9 h-9 rounded-full border border-purple-400/40 bg-black/50 flex items-center justify-center">
-                    <Sparkles size={14} className="text-purple-300" />
-                  </div>
-                  <span className="mt-1 text-[10px] font-mono font-black text-purple-200 tabular-nums">
-                    {opponent.deck.length}
-                  </span>
-                  {isTestingArena && (
-                    <span className="absolute -bottom-1.5 px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-950 font-serif font-black text-[8px] uppercase">
-                      Comprar
+                  <CardBackArt theme={opponentCardBack} context="live" compact className="w-full h-full">
+                    <span className="absolute bottom-1 px-1.5 py-0.5 rounded bg-black/75 border border-white/15 text-[10px] font-mono font-black text-purple-200 tabular-nums z-20">
+                      {opponent.deck.length}
                     </span>
-                  )}
+                    {isTestingArena && (
+                      <span className="absolute top-1 px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-950 font-serif font-black text-[8px] uppercase z-20">
+                        Comprar
+                      </span>
+                    )}
+                  </CardBackArt>
                 </div>
                 {isTestingArena && (
                   <button
@@ -18093,16 +18336,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   <div className="absolute w-24 h-32 translate-x-0.5 translate-y-0.5 rounded-xl bg-[#15223d] border border-amber-400/40 shadow-md" />
                 )}
 
-                {/* Interactive Top Card of the 3D Deck */}
+                {/* Interactive Top Card of the 3D Deck with Equipped Card Back */}
                 <button
                   type="button"
                   data-deck-zone="player"
                   onClick={() => handleDrawCard('player')}
                   disabled={!isTestingArena && (player.hasDrawnThisRound || player.deck.length === 0)}
-                  className={`relative w-24 h-32 rounded-xl border-2 transition-all duration-200 flex flex-col items-center justify-between p-2 overflow-hidden group select-none ${
+                  className={`relative w-24 h-32 rounded-xl transition-all duration-200 overflow-hidden group select-none ${
                     isTestingArena || (!player.hasDrawnThisRound && player.deck.length > 0)
-                      ? 'border-amber-300 bg-gradient-to-br from-indigo-950 via-blue-950 to-stone-950 shadow-[0_0_28px_rgba(251,191,36,0.65)] cursor-pointer hover:-translate-y-1.5 hover:scale-105 hover:border-yellow-200 active:scale-95'
-                      : 'border-stone-600/70 bg-gradient-to-br from-stone-900 via-indigo-950/60 to-stone-950 shadow-inner cursor-not-allowed opacity-85'
+                      ? 'ring-2 ring-amber-300 shadow-[0_0_28px_rgba(251,191,36,0.65)] cursor-pointer hover:-translate-y-1.5 hover:scale-105 active:scale-95'
+                      : 'opacity-85 shadow-inner cursor-not-allowed'
                   }`}
                   title={
                     isTestingArena
@@ -18114,45 +18357,20 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       : `Baralho (${player.deck.length} cartas) - Clique para COMPRAR sua carta da rodada!`
                   }
                 >
-                  {/* Top Runes */}
-                  <span className="text-[8px] font-mono tracking-widest text-amber-300/80">
-                    ᚱ ᚦ ᚠ ᛊ
-                  </span>
-
-                  {/* Center Celestial Astrolabe Emblem */}
-                  <div
-                    className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all ${
-                      isTestingArena || (!player.hasDrawnThisRound && player.deck.length > 0)
-                        ? 'border-amber-300 bg-black/60 shadow-[0_0_16px_rgba(56,189,248,0.6)] group-hover:rotate-45'
-                        : 'border-stone-600/60 bg-black/40'
-                    }`}
-                  >
-                    <div
-                      className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                        isTestingArena || (!player.hasDrawnThisRound && player.deck.length > 0)
-                          ? 'bg-gradient-to-tr from-amber-400 via-yellow-200 to-cyan-300 shadow-[0_0_12px_#fbbf24]'
-                          : 'bg-stone-700'
-                      }`}
-                    >
-                      <Sparkles
-                        size={14}
-                        className={isTestingArena || (!player.hasDrawnThisRound && player.deck.length > 0) ? 'text-stone-950' : 'text-stone-400'}
-                      />
+                  <CardBackArt theme={cardBack} context="live" compact className="w-full h-full">
+                    {/* Bottom Deck Count / Draw Callout */}
+                    <div className="absolute inset-x-1.5 bottom-1.5 flex flex-col items-center z-20">
+                      {isTestingArena || (!player.hasDrawnThisRound && player.deck.length > 0) ? (
+                        <span className="w-full text-center text-[9px] font-serif font-black uppercase text-stone-950 bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 px-1.5 py-0.5 rounded-md shadow-sm tracking-wider animate-pulse">
+                          COMPRAR ({player.deck.length})
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-black/75 border border-white/15 text-[10px] font-mono font-extrabold text-amber-200/95 tabular-nums">
+                          {player.deck.length} Cartas
+                        </span>
+                      )}
                     </div>
-                  </div>
-
-                  {/* Bottom Deck Count / Draw Callout */}
-                  <div className="w-full flex flex-col items-center">
-                    {isTestingArena || (!player.hasDrawnThisRound && player.deck.length > 0) ? (
-                      <span className="w-full text-center text-[9px] font-serif font-black uppercase text-stone-950 bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 px-1.5 py-0.5 rounded-md shadow-sm tracking-wider animate-pulse">
-                        COMPRAR ({player.deck.length})
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono font-extrabold text-amber-200/90 tabular-nums">
-                        {player.deck.length} Cartas
-                      </span>
-                    )}
-                  </div>
+                  </CardBackArt>
                 </button>
               </div>
 
@@ -18187,8 +18405,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         {/* ================================================================== */}
         <div className="flex-1 flex flex-col justify-between items-center min-w-0 h-full relative">
 
-          {/* 1. OPPONENT INVERTED FAN HAND AT TOP RIM */}
-          <div className="w-full flex flex-col items-center shrink-0 pt-0.5 z-30">
+          {/* 1. OPPONENT INVERTED FAN HAND AT TOP RIM (RECEDED WHEN HIDDEN) */}
+          <div
+            className={`w-full flex flex-col items-center shrink-0 ${
+              opponent.isAi ? 'z-20 -mt-1' : 'z-30 pt-0.5'
+            }`}
+          >
             {isTestingArena && opponent.hand.length > 0 && (
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-[10px] font-serif font-bold text-purple-300 uppercase tracking-wider">
@@ -18203,13 +18425,20 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 </button>
               </div>
             )}
-            <div data-hand-zone="opponent" className="flex items-center justify-center max-w-full overflow-visible px-4 py-0.5 min-h-[42px]">
+            <div
+              data-hand-zone="opponent"
+              className={`flex justify-center max-w-full overflow-visible px-4 ${
+                opponent.isAi
+                  ? 'items-end h-[46px] lg:h-[52px]'
+                  : 'items-center py-0.5 min-h-[42px]'
+              }`}
+            >
               {opponent.hand.map((c, idx) => {
                 const total = opponent.hand.length;
                 const mid = (total - 1) / 2;
                 const offset = idx - mid;
-                const rotDeg = total <= 8 ? offset * -2.2 : 0;
-                const dropY = total <= 8 ? Math.abs(offset) * -2 : 0;
+                const rotDeg = total <= 8 ? offset * (opponent.isAi ? -1.8 : -2.2) : 0;
+                const dropY = total <= 8 ? Math.abs(offset) * (opponent.isAi ? -1.5 : -2) : 0;
 
                 const isOpponentTurn = turnPlayer === 'opponent';
                 const isTierAllowed = isTestingArena || isTierAllowedInRound(c.tier, round, c);
@@ -18290,7 +18519,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     key={c.instanceId}
                     style={{
                       transform: `translateY(${dropY}px) rotate(${rotDeg}deg)`,
-                      marginLeft: idx === 0 ? '0px' : opponent.isAi ? '-22px' : '-12px',
+                      marginLeft: idx === 0 ? '0px' : opponent.isAi ? '-38px' : '-12px',
                     }}
                     onMouseEnter={
                       !opponent.isAi
@@ -18310,7 +18539,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     }
                     className={`relative transition-all duration-200 ${
                       opponent.isAi
-                        ? 'scale-75 origin-top opacity-90'
+                        ? '-mt-[118px] lg:-mt-[112px] scale-[0.58] lg:scale-[0.62] origin-bottom opacity-90 hover:translate-y-2'
                         : 'scale-90 origin-top hover:translate-y-4 hover:scale-110 hover:z-50 hover:!rotate-0'
                     }`}
                   >
@@ -18318,6 +18547,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       card={c}
                       size="sm"
                       isOpponentHand={opponent.isAi}
+                      cardBackOverride={opponentCardBack}
                       isPlayable={isPlayable}
                       unplayableReason={unplayableReason}
                       hasAliancaAngiris={hasAliancaAngiris(c, opponent.board)}
@@ -18346,7 +18576,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           </div>
 
           {/* 2. UNIFIED RUNIC BATTLEFIELD TABLE (OPPONENT ROW + EQUATORIAL FRONT + PLAYER ROW) */}
-          <div className="relative w-full flex-1 my-1 rounded-[28px] border-[3px] border-amber-500/40 bg-gradient-to-b from-[#161029]/90 via-[#0d0a1a]/95 to-[#121629]/90 shadow-[0_0_55px_rgba(0,0,0,0.9),inset_0_0_45px_rgba(0,0,0,0.85)] backdrop-blur-md flex flex-col justify-between px-4 py-2.5 overflow-visible">
+          <div className="relative w-full flex-1 my-1 rounded-[28px] border-[3px] border-amber-500/40 bg-[#080711]/55 shadow-[0_0_55px_rgba(0,0,0,0.9),inset_0_0_45px_rgba(0,0,0,0.75)] flex flex-col justify-between px-4 py-2.5 overflow-visible">
+            {/* Split Half-Board Playmat Surface inside Desktop Battlefield Table (Predominant on Owner's Side) */}
+            <ArenaSplitPlaymat
+              playerPlaymat={playmat}
+              opponentPlaymat={opponentPlaymat}
+              animated={ambientAnimations && animationMode === 'full'}
+              reduceBlur={reduceGpuBlur}
+              variant="table"
+              className="rounded-[25px]"
+            />
+
             {/* Active Turn Half-Table Glowing Border (Flashes Full & Crawls on Turn Switch) */}
             <TableTurnBorderGlow
               turnPlayer={turnPlayer}
@@ -18356,7 +18596,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             />
 
             {/* Inner Golden Filigree Frame */}
-            <div className="pointer-events-none absolute inset-1.5 rounded-[22px] border border-amber-300/15" />
+            <div className="pointer-events-none absolute inset-1.5 rounded-[22px] border border-amber-300/18 z-[2]" />
 
             {/* 4 Elemental Corner Gems */}
             <div className="pointer-events-none absolute -top-2.5 -left-2.5 w-6 h-6 rounded-md bg-gradient-to-tr from-cyan-500 to-sky-200 rotate-45 border-2 border-white shadow-[0_0_14px_#38bdf8] z-20" />
@@ -18364,19 +18604,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             <div className="pointer-events-none absolute -bottom-2.5 -left-2.5 w-6 h-6 rounded-md bg-gradient-to-tr from-blue-600 to-cyan-300 rotate-45 border-2 border-white shadow-[0_0_14px_#3b82f6] z-20" />
             <div className="pointer-events-none absolute -bottom-2.5 -right-2.5 w-6 h-6 rounded-md bg-gradient-to-tr from-amber-500 to-yellow-200 rotate-45 border-2 border-white shadow-[0_0_14px_#f59e0b] z-20" />
 
-            {/* Sacred Constellation Geometry Etched into Stone Floor */}
-            <div className="absolute inset-0 pointer-events-none opacity-20 overflow-hidden rounded-[26px]">
-              <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="50%" cy="50%" r="180" fill="none" stroke="#fbbf24" strokeWidth="0.7" strokeDasharray="6,6" />
-                <circle cx="50%" cy="50%" r="290" fill="none" stroke="#38bdf8" strokeWidth="0.5" strokeDasharray="3,8" />
-                <line x1="8%" y1="50%" x2="92%" y2="50%" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.45" />
-                <circle cx="14%" cy="26%" r="2.5" fill="#fef08a" />
-                <circle cx="22%" cy="38%" r="2" fill="#fef08a" />
-                <circle cx="84%" cy="28%" r="2.5" fill="#93c5fd" />
-                <circle cx="78%" cy="72%" r="2.5" fill="#93c5fd" />
-                <line x1="14%" y1="26%" x2="22%" y2="38%" stroke="#fef08a" strokeWidth="0.8" strokeDasharray="3,3" />
-              </svg>
-            </div>
+            {/* Sacred Constellation Geometry Etched into Stone Floor (Standard Arena only so animated playmats stay crisp) */}
+            {playmat === 'standard_arena' && opponentPlaymat === 'standard_arena' && (
+              <div className="absolute inset-0 pointer-events-none opacity-20 overflow-hidden rounded-[26px]">
+                <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="50%" cy="50%" r="180" fill="none" stroke="#fbbf24" strokeWidth="0.7" strokeDasharray="6,6" />
+                  <circle cx="50%" cy="50%" r="290" fill="none" stroke="#38bdf8" strokeWidth="0.5" strokeDasharray="3,8" />
+                  <line x1="8%" y1="50%" x2="92%" y2="50%" stroke="#fbbf24" strokeWidth="1" strokeOpacity="0.45" />
+                  <circle cx="14%" cy="26%" r="2.5" fill="#fef08a" />
+                  <circle cx="22%" cy="38%" r="2" fill="#fef08a" />
+                  <circle cx="84%" cy="28%" r="2.5" fill="#93c5fd" />
+                  <circle cx="78%" cy="72%" r="2.5" fill="#93c5fd" />
+                  <line x1="14%" y1="26%" x2="22%" y2="38%" stroke="#fef08a" strokeWidth="0.8" strokeDasharray="3,3" />
+                </svg>
+              </div>
+            )}
 
             {/* -------------------------------------------------------------- */}
             {/* UPPER HALF: OPPONENT BATTLE ROW WITH SCULPTED RUNIC SLOTS      */}
@@ -19322,6 +19564,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     const isPinkFairySlot = Boolean(opponent.corteDasFadasUsed && i < (opponent.pinkExtraHpSlots || 0));
                     const purpleStartIdx = opponent.maxHp - (opponent.purpleExtraHpSlots || 0);
                     const isPurpleSlot = i >= purpleStartIdx;
+                    const finnStartIdx = purpleStartIdx - (opponent.finnFairyHpSlots || 0);
+                    const isFinnFairySlot = !isPurpleSlot && i >= finnStartIdx;
                     return (
                       <div
                         key={i}
@@ -19330,6 +19574,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                             ? 'Vida Extra Rosa (Corte das Fadas)'
                             : isPurpleSlot
                             ? 'Segmento Extra Roxo (Mipo)'
+                            : isFinnFairySlot
+                            ? 'Segmento Extra Feérico (Finn)'
                             : undefined
                         }
                         className={`flex-1 h-full rounded-xs transition-all duration-300 ${
@@ -19339,6 +19585,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                             ? isFilled
                               ? 'bg-gradient-to-r from-purple-400 via-fuchsia-500 to-violet-600 shadow-[0_0_8px_#c084fc]'
                               : 'border border-purple-400/50 bg-purple-950/50'
+                            : isFinnFairySlot
+                            ? isFilled
+                              ? 'bg-gradient-to-r from-emerald-300 via-teal-400 to-pink-400 shadow-[0_0_8px_#34d399]'
+                              : 'border border-emerald-400/55 bg-emerald-950/50'
                             : isFilled
                             ? 'bg-gradient-to-r from-purple-400 to-rose-500 shadow-[0_0_6px_#f43f5e]'
                             : 'bg-stone-800/50'
@@ -19584,6 +19834,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     const isPinkFairySlot = Boolean(player.corteDasFadasUsed && i < (player.pinkExtraHpSlots || 0));
                     const purpleStartIdx = player.maxHp - (player.purpleExtraHpSlots || 0);
                     const isPurpleSlot = i >= purpleStartIdx;
+                    const finnStartIdx = purpleStartIdx - (player.finnFairyHpSlots || 0);
+                    const isFinnFairySlot = !isPurpleSlot && i >= finnStartIdx;
                     return (
                       <div
                         key={i}
@@ -19592,6 +19844,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                             ? 'Vida Extra Rosa (Corte das Fadas)'
                             : isPurpleSlot
                             ? 'Segmento Extra Roxo (Mipo)'
+                            : isFinnFairySlot
+                            ? 'Segmento Extra Feérico (Finn)'
                             : undefined
                         }
                         className={`flex-1 h-full rounded-xs transition-all duration-300 ${
@@ -19601,6 +19855,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                             ? isFilled
                               ? 'bg-gradient-to-r from-purple-400 via-fuchsia-500 to-violet-600 shadow-[0_0_8px_#c084fc]'
                               : 'border border-purple-400/50 bg-purple-950/50'
+                            : isFinnFairySlot
+                            ? isFilled
+                              ? 'bg-gradient-to-r from-emerald-300 via-teal-400 to-pink-400 shadow-[0_0_8px_#34d399]'
+                              : 'border border-emerald-400/55 bg-emerald-950/50'
                             : isFilled
                             ? 'bg-gradient-to-r from-cyan-400 to-blue-500 shadow-[0_0_6px_#38bdf8]'
                             : 'bg-stone-800/50'
@@ -20274,6 +20532,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         matchType={matchType}
         rankDelta={rankDelta}
         currentRankPoints={currentRankPoints}
+        matchRewards={matchRewards}
         isOnlinePvp={isOnlinePvp}
         isTutorialMode={isTutorialMode}
         tutorialRewardResult={tutorialRewardResult}

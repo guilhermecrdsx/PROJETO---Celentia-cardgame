@@ -2254,6 +2254,12 @@ class SoundSystem {
       | 'gangnyr_bleed_slash'
       | 'gangnyr_hemorrhage_burst'
       | 'hamelia_putrid_corrosion'
+      | 'celia_frost_bonus'
+      | 'celia_ice_barrier'
+      | 'vilma_fire_bonus'
+      | 'vilma_fire_barrier'
+      | 'mago_uhr_draw_arcana'
+      | 'gough_arrow_forge'
   ) {
     const out = this.getOutputNode();
     if (!out || !this.ctx) return;
@@ -2379,8 +2385,13 @@ class SoundSystem {
         break;
       }
       case 'fanx_aqua_blessing': {
-        noise(0.55, 'bandpass', 720, 1800, 0.18);
-        [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, idx) => tone(f, f * 1.05, 0.42, 'sine', 0.14, idx * 0.055));
+        // Cascata aquática suave + acorde angelical cristalino sincronizado (~1.05s)
+        noise(0.68, 'bandpass', 620, 2100, 0.16, 0.02);
+        noise(0.35, 'highpass', 1400, 3200, 0.09, 0.36);
+        [523.25, 659.25, 783.99, 987.77, 1174.66, 1567.98].forEach((f, idx) =>
+          tone(f, f * 1.03, 0.48, idx % 2 === 0 ? 'sine' : 'triangle', 0.125, idx * 0.065)
+        );
+        tone(1046.5, 1318.5, 0.42, 'sine', 0.11, 0.56);
         break;
       }
       case 'cristalys_aqua_heal':
@@ -2646,6 +2657,45 @@ class SoundSystem {
         [369.99, 311.13, 261.63, 207.65].forEach((f, i) =>
           tone(f, f * 0.85, 0.36, i % 2 === 0 ? 'sawtooth' : 'triangle', 0.14, i * 0.08)
         );
+        break;
+      }
+      case 'celia_frost_bonus': {
+        noise(0.32, 'highpass', 2400, 4600, 0.14);
+        [783.99, 1046.5, 1318.51, 1567.98].forEach((f, i) =>
+          tone(f, f * 1.04, 0.28, 'sine', 0.13, i * 0.06)
+        );
+        break;
+      }
+      case 'celia_ice_barrier': {
+        noise(0.24, 'bandpass', 1800, 4200, 0.18);
+        tone(1174.66, 880.0, 0.34, 'triangle', 0.18);
+        tone(1760.0, 1318.51, 0.38, 'sine', 0.14, 0.04);
+        break;
+      }
+      case 'vilma_fire_bonus': {
+        noise(0.36, 'bandpass', 420, 1700, 0.2);
+        [329.63, 440.0, 587.33, 659.25].forEach((f, i) =>
+          tone(f, f * 1.08, 0.26, 'sawtooth', 0.1, i * 0.06)
+        );
+        break;
+      }
+      case 'vilma_fire_barrier': {
+        noise(0.28, 'bandpass', 320, 1450, 0.22);
+        tone(220.0, 440.0, 0.32, 'sawtooth', 0.14);
+        tone(523.25, 659.25, 0.35, 'triangle', 0.14, 0.05);
+        break;
+      }
+      case 'mago_uhr_draw_arcana': {
+        noise(0.26, 'bandpass', 1200, 3200, 0.12);
+        [440.0, 554.37, 659.25, 880.0, 1108.73].forEach((f, i) =>
+          tone(f, f * 1.03, 0.3, i % 2 === 0 ? 'sine' : 'triangle', 0.11, i * 0.055)
+        );
+        break;
+      }
+      case 'gough_arrow_forge': {
+        noise(0.24, 'highpass', 1600, 5200, 0.16);
+        tone(587.33, 1174.66, 0.22, 'sawtooth', 0.11);
+        tone(880.0, 1760.0, 0.24, 'triangle', 0.12, 0.06);
         break;
       }
     }

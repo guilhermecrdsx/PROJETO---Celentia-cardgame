@@ -5,6 +5,7 @@ import {
   Swords,
   Shield,
   ShieldAlert,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -20,6 +21,7 @@ import {
   EyeOff,
   SkipForward,
   Hand,
+  RotateCcw,
 } from 'lucide-react';
 import { sound } from '../services/soundEffects';
 
@@ -143,59 +145,76 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
   winner,
   onDismissGuided,
 }) => {
-  const [step, setStep] = useState<TutorialStepId>('step_1_dial');
+  // Separate real mandatory progress from the currently viewed step (allows re-reading earlier steps freely without repeating actions)
+  const [progressStep, setProgressStep] = useState<TutorialStepId>('step_1_dial');
+  const [viewingStep, setViewingStep] = useState<TutorialStepId>('step_1_dial');
   const [expandedDetail, setExpandedDetail] = useState<boolean>(false);
   const [spotlightRect, setSpotlightRect] = useState<SpotlightRect | null>(null);
   const [guidedMinimized, setGuidedMinimized] = useState<boolean>(false);
   const [guidedSpotlightOn, setGuidedSpotlightOn] = useState<boolean>(true);
   const [step6EntryOrbCount, setStep6EntryOrbCount] = useState<number>(0);
 
-  const prevStepRef = useRef<TutorialStepId>(step);
+  const prevViewingStepRef = useRef<TutorialStepId>(viewingStep);
+  const prevProgressStepRef = useRef<TutorialStepId>(progressStep);
 
-  // Reset expandable section and record orb count when switching steps
+  const progressIndex = TUTORIAL_STEP_ORDER.indexOf(progressStep);
+  const viewingIndex = TUTORIAL_STEP_ORDER.indexOf(viewingStep);
+  const isReviewingPastStep = viewingIndex < progressIndex;
+
+  // Collapse expandable rule drawer when switching viewed step
   useEffect(() => {
-    if (prevStepRef.current !== step) {
-      prevStepRef.current = step;
+    if (prevViewingStepRef.current !== viewingStep) {
+      prevViewingStepRef.current = viewingStep;
       setExpandedDetail(false);
-      if (step === 'step_6_orb') {
+    }
+  }, [viewingStep]);
+
+  // Capture orb action baseline when reaching Step 6
+  useEffect(() => {
+    if (prevProgressStepRef.current !== progressStep) {
+      prevProgressStepRef.current = progressStep;
+      if (progressStep === 'step_6_orb') {
         setStep6EntryOrbCount(playerOrbActionCount);
       }
     }
-  }, [step, playerOrbActionCount]);
+  }, [progressStep, playerOrbActionCount]);
 
   // Mandatory automatic progression for interactive steps in Tutorial mode
   useEffect(() => {
     if (!isActive || mode !== 'tutorial' || winner) return;
 
     // Step 3 (Hand): MUST summon at least 1 unit onto the table
-    if (step === 'step_3_hand' && playerBoardCount >= 1) {
+    if (progressStep === 'step_3_hand' && playerBoardCount >= 1) {
       sound.playDraw();
-      setStep('step_4_board');
+      setProgressStep('step_4_board');
+      setViewingStep('step_4_board');
       return;
     }
 
     // Step 4 (Board — Attack & Defense simulation):
     // Requires completing 1 real attack AND 1 real defense (or reaching Round 3 after attacking)
-    if (step === 'step_4_board') {
+    if (progressStep === 'step_4_board') {
       const attacked = playerAttackCompletedCount >= 1;
       const defended = playerDefenseCompletedCount >= 1 || (attacked && round >= 3);
       if (attacked && defended && !isCombatAnimating && !isDefendingPhase) {
         sound.playDraw();
-        setStep('step_5_hp');
+        setProgressStep('step_5_hp');
+        setViewingStep('step_5_hp');
         return;
       }
     }
 
     // Step 6 (Action Orb / Pass Turn): MUST press the Action Orb once on your turn
-    if (step === 'step_6_orb' && playerOrbActionCount > step6EntryOrbCount) {
+    if (progressStep === 'step_6_orb' && playerOrbActionCount > step6EntryOrbCount) {
       sound.playDraw();
-      setStep('step_7_finish');
+      setProgressStep('step_7_finish');
+      setViewingStep('step_7_finish');
     }
   }, [
     isActive,
     mode,
     winner,
-    step,
+    progressStep,
     playerBoardCount,
     playerAttackCompletedCount,
     playerDefenseCompletedCount,
@@ -328,7 +347,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
     };
   })();
 
-  // Determine active DOM selector to spotlight
+  // Determine active DOM selector to spotlight based on viewingStep
   const currentTargetSelector: string | null = (() => {
     if (!isActive || winner) return null;
 
@@ -338,7 +357,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
     }
 
     // Tutorial mode
-    switch (step) {
+    switch (viewingStep) {
       case 'step_1_dial':
         return '[data-tutorial-target="round-dial-core"], [data-tutorial-target="round-dial"]';
       case 'step_1_2_role':
@@ -350,6 +369,9 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
       case 'step_3_hand':
         return '[data-hand-zone="player"]';
       case 'step_4_board': {
+        if (isReviewingPastStep) {
+          return '[data-tutorial-target="player-board"]';
+        }
         if (isDefendingPhase) {
           return assignedBlocksCount > 0 || playerBoardCount === 0
             ? '[data-tutorial-target="action-orb"]'
@@ -360,7 +382,6 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
             ? '[data-tutorial-target="action-orb"]'
             : '[data-tutorial-target="player-board"]';
         }
-        // Already attacked once, waiting to pass/reach Round 2 defense
         return turnPlayer === 'player' ? '[data-tutorial-target="action-orb"]' : null;
       }
       case 'step_5_hp':
@@ -374,7 +395,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
     }
   })();
 
-  // Measure target element continuously for responsive spotlight tracking
+  // Measure target element continuously for crisp spotlight tracking
   const measureSpotlight = useCallback(() => {
     if (!isActive || !currentTargetSelector) {
       setSpotlightRect(null);
@@ -430,7 +451,6 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
 
     return (
       <>
-        {/* Optional Non-Blocking Spotlight Ring in Guided PvIA */}
         {spotlightRect && !guidedMinimized && guidedSpotlightOn && (
           <div
             aria-hidden="true"
@@ -444,7 +464,6 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           />
         )}
 
-        {/* Guided PvIA Coach Card — Always Skippable / Closable */}
         <div className="fixed top-14 right-2 sm:right-4 z-[95] pointer-events-none max-w-[330px] sm:max-w-[360px] w-[calc(100vw-1rem)]">
           {guidedMinimized ? (
             <div className="pointer-events-auto flex items-center justify-end gap-1.5">
@@ -476,7 +495,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
             </div>
           ) : (
             <div
-              className={`pointer-events-auto rounded-2xl border bg-gradient-to-br from-[#08131d]/96 via-[#0a0f1c]/96 to-[#050811]/97 backdrop-blur-md p-3 sm:p-3.5 text-stone-100 ${borderColor}`}
+              className={`pointer-events-auto rounded-2xl border bg-gradient-to-br from-[#08131d]/96 via-[#0a0f1c]/96 to-[#050811]/97 p-3 sm:p-3.5 text-stone-100 ${borderColor}`}
             >
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -534,8 +553,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
                 {guidedHint.body}
               </p>
 
-              {/* Compact live status footer */}
-              <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-stone-400">
+              <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] font-mono text-stone-400 tabular-nums">
                 <span>
                   R{round} · {attackerRole === 'player' ? 'Atacante' : 'Defensor'}
                 </span>
@@ -551,13 +569,35 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
   }
 
   // =========================================================================
-  // RENDER MODE 1: MANDATORY INTERACTIVE TUTORIAL (NO SKIP, NO CLOSE!)
+  // RENDER MODE 1: MANDATORY INTERACTIVE TUTORIAL (CRISP FOCUS + RE-READ NAV)
   // =========================================================================
-  const stepIndex = TUTORIAL_STEP_ORDER.indexOf(step);
-  const progressPct = Math.round(((stepIndex + 1) / TUTORIAL_STEP_ORDER.length) * 100);
+  const progressPct = Math.round(((progressIndex + 1) / TUTORIAL_STEP_ORDER.length) * 100);
 
-  // Step 7: Compact non-blocking mission banner so player can freely finish and win
-  if (step === 'step_7_finish') {
+  const handleGoBack = () => {
+    if (viewingIndex <= 0) return;
+    sound.playDraw();
+    setViewingStep(TUTORIAL_STEP_ORDER[viewingIndex - 1]);
+  };
+
+  const handleStepForwardInReview = () => {
+    if (viewingIndex >= progressIndex) return;
+    sound.playDraw();
+    setViewingStep(TUTORIAL_STEP_ORDER[viewingIndex + 1]);
+  };
+
+  const handleResumeCurrentStep = () => {
+    sound.playSummon();
+    setViewingStep(progressStep);
+  };
+
+  const handleAdvanceReadingStep = (nextStep: TutorialStepId) => {
+    sound.playSummon();
+    setProgressStep(nextStep);
+    setViewingStep(nextStep);
+  };
+
+  // Step 7: Compact non-blocking mission banner with "Rever" button to re-read any earlier step
+  if (viewingStep === 'step_7_finish') {
     const liveTip = isDefendingPhase
       ? assignedBlocksCount === 0 && playerBoardCount > 0
         ? 'O Instrutor atacou! Clique em uma carta aliada para bloquear e confirme em DEFENDER.'
@@ -575,17 +615,17 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
       : 'Sem ações restantes — clique em PASSAR A VEZ no botão central.';
 
     return (
-      <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[94] pointer-events-none w-[min(94vw,560px)]">
-        <div className="pointer-events-auto rounded-2xl border border-emerald-400/75 bg-gradient-to-r from-[#071e16]/96 via-[#0a1322]/96 to-[#161209]/96 backdrop-blur-md px-3.5 py-2.5 shadow-[0_12px_36px_rgba(0,0,0,0.85),0_0_24px_rgba(16,185,129,0.28)] flex items-center gap-3">
+      <div className="fixed top-14 left-1/2 -translate-x-1/2 z-[94] pointer-events-none w-[min(95vw,600px)]">
+        <div className="pointer-events-auto rounded-2xl border border-emerald-400/75 bg-gradient-to-r from-[#071e16]/96 via-[#0a1322]/96 to-[#161209]/96 px-3.5 py-2.5 shadow-[0_12px_36px_rgba(0,0,0,0.85),0_0_24px_rgba(16,185,129,0.28)] flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-emerald-950/90 border border-emerald-400/60 flex items-center justify-center text-emerald-300 shrink-0">
             <GraduationCap size={18} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-mono font-black uppercase tracking-wider text-emerald-300">
+            <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+              <span className="font-black uppercase tracking-wider text-emerald-300">
                 Passo 7 de 7 · Conclua a Partida
               </span>
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-amber-300">
+              <span className="inline-flex items-center gap-1 font-bold text-amber-300 tabular-nums">
                 <Coins size={11} />
                 +250 Ouro ao vencer
               </span>
@@ -594,14 +634,23 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
               Vença o Instrutor Celentia (Vida inimiga: {opponentHp}) — {liveTip}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="shrink-0 min-h-[34px] px-2.5 py-1.5 rounded-lg bg-stone-900/95 hover:bg-stone-800 border border-stone-600/80 text-stone-200 hover:text-amber-200 text-[11px] font-serif font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-colors"
+            title="Voltar para reler passos anteriores"
+          >
+            <ChevronLeft size={13} />
+            <span>Rever</span>
+          </button>
         </div>
       </div>
     );
   }
 
-  // Build step content dynamically for Steps 1 -> 6
+  // Build step content dynamically for the currently viewed step (1 -> 6)
   const stepMeta = (() => {
-    switch (step) {
+    switch (viewingStep) {
       case 'step_1_dial':
         return {
           icon: <Compass size={17} className="text-amber-300" />,
@@ -611,7 +660,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
               <p>
                 No <strong>topo</strong> da barra esquerda você vê os <strong>Tiers liberados</strong> nesta rodada — cartas só podem ser invocadas quando o Tier delas estiver livre:
               </p>
-              <div className="grid grid-cols-3 gap-1 text-[10px] font-mono bg-black/45 border border-amber-400/25 rounded-lg p-1.5 text-amber-100">
+              <div className="grid grid-cols-3 gap-1 text-[10px] font-mono tabular-nums bg-black/45 border border-amber-400/25 rounded-lg p-1.5 text-amber-100">
                 <span>T1: Rodada 1</span>
                 <span>T2: Rodada 3</span>
                 <span>T3: Rodada 5</span>
@@ -647,7 +696,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           requiresBoardAction: false,
           actionHint: 'Leia os detalhes e avance para o Passo 1.2.',
           nextStep: 'step_1_2_role' as TutorialStepId,
-          nextButtonLabel: 'Avançar (Passo 1.2)',
+          nextButtonLabel: 'Avançar (1.2)',
         };
 
       case 'step_1_2_role':
@@ -678,7 +727,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           requiresBoardAction: false,
           actionHint: 'Você pode expandir a explicação ou avançar para o Passo 1.3.',
           nextStep: 'step_1_3_coin' as TutorialStepId,
-          nextButtonLabel: 'Avançar (Passo 1.3)',
+          nextButtonLabel: 'Avançar (1.3)',
         };
 
       case 'step_1_3_coin':
@@ -695,7 +744,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           requiresBoardAction: false,
           actionHint: 'Avance para conhecer o seu Baralho (Passo 2).',
           nextStep: 'step_2_deck' as TutorialStepId,
-          nextButtonLabel: 'Ir para o Baralho (Passo 2)',
+          nextButtonLabel: 'Baralho (Passo 2)',
         };
 
       case 'step_2_deck':
@@ -720,7 +769,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           requiresBoardAction: false,
           actionHint: 'Avance para aprender sobre suas cartas na mão (Passo 3).',
           nextStep: 'step_3_hand' as TutorialStepId,
-          nextButtonLabel: 'Ir para a Mão (Passo 3)',
+          nextButtonLabel: 'Mão (Passo 3)',
         };
 
       case 'step_3_hand':
@@ -738,13 +787,13 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
               </p>
               <div className="grid grid-cols-1 gap-1 text-[10.5px] bg-black/45 border border-emerald-400/25 rounded-lg p-2">
                 <div>
-                  <strong className="text-emerald-300">⚡ Rápidas:</strong> resolvem na hora e <strong>não consomem sua vez</strong>.
+                  <strong className="text-emerald-300">Rápidas:</strong> resolvem na hora e <strong>não consomem sua vez</strong>.
                 </div>
                 <div>
-                  <strong className="text-amber-300">⏳ Lentas:</strong> consomem sua vez e abrem janela de resposta ao oponente.
+                  <strong className="text-amber-300">Lentas:</strong> consomem sua vez e abrem janela de resposta ao oponente.
                 </div>
                 <div>
-                  <strong className="text-fuchsia-300">✨ Fugazes:</strong> rápidas e temporárias — não consomem sua vez, mas somem no fim da rodada se não forem usadas.
+                  <strong className="text-fuchsia-300">Fugazes:</strong> rápidas e temporárias — não consomem sua vez, mas somem no fim da rodada se não forem usadas.
                 </div>
               </div>
             </div>
@@ -759,13 +808,31 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
 
       case 'step_4_board': {
         const attackedOnce = playerAttackCompletedCount >= 1;
+        if (isReviewingPastStep) {
+          return {
+            icon: <Swords size={17} className="text-amber-300" />,
+            title: 'A Mesa · Ataque e Defesa',
+            body: (
+              <p>
+                Na <strong>Mesa de Combate</strong>, clicar em uma unidade aliada designa ela para <strong>Ataque</strong> (quando você for o Atacante) ou para <strong>Defesa/Bloqueio</strong> (quando você for o Defensor). Depois basta confirmar no botão central.
+              </p>
+            ),
+            expandLabel: null,
+            expandContent: null,
+            requiresBoardAction: false,
+            actionHint: 'Você já concluiu a prática de ataque e defesa.',
+            nextStep: null,
+            nextButtonLabel: null,
+          };
+        }
+
         if (isDefendingPhase) {
           return {
             icon: <Shield size={17} className="text-sky-300" />,
             title: 'Prática na Mesa · Fase de Defesa!',
             body: (
               <p>
-                Agora é a <strong>simulação de Defesa</strong>! O Instrutor atacou você na Rodada 2. Para designar uma carta sua para defender, <strong>basta clicar nela na mesa</strong> (e no atacante inimigo) e depois confirmar em <strong>DEFENDER</strong> no botão central!
+                Agora é a <strong>simulação de Defesa</strong>! O Instrutor atacou você. Para designar uma carta sua para defender, <strong>basta clicar nela na mesa</strong> (e no atacante inimigo) e depois confirmar em <strong>DEFENDER</strong> no botão central!
               </p>
             ),
             expandLabel: null,
@@ -803,7 +870,6 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           };
         }
 
-        // Attacked once; waiting for Round 2 Instructor attack so player practices Defense
         return {
           icon: <Shield size={17} className="text-sky-300" />,
           title: 'Excelente Ataque! Prepare-se para Defender',
@@ -817,7 +883,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           requiresBoardAction: true,
           actionHint:
             turnPlayer === 'player'
-              ? 'AÇÃO OBRIGATÓRIA: Clique em PASSAR A VEZ (ou jogue mais uma unidade) para avançar à Rodada 2 e receber o ataque do Instrutor!'
+              ? 'AÇÃO OBRIGATÓRIA: Clique em PASSAR A VEZ (ou invoque mais uma unidade) para avançar à Rodada 2 e receber o ataque do Instrutor!'
               : 'Aguarde o Instrutor preparar e declarar o ataque dele...',
           nextStep: null,
           nextButtonLabel: null,
@@ -843,7 +909,7 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           requiresBoardAction: false,
           actionHint: 'Avance para o Passo 6 e domine o Botão de Passar a Vez!',
           nextStep: 'step_6_orb' as TutorialStepId,
-          nextButtonLabel: 'Ir para o Botão de Ação (Passo 6)',
+          nextButtonLabel: 'Botão de Ação (6)',
         };
 
       case 'step_6_orb':
@@ -893,28 +959,24 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
     }
   })();
 
+  const isBoardInteractionEnabled = stepMeta.requiresBoardAction && !isReviewingPastStep;
+
   // Smart coach panel placement so it never hides the spotlighted element
   const coachPositionClass = (() => {
-    switch (step) {
+    switch (viewingStep) {
       case 'step_1_dial':
       case 'step_1_2_role':
       case 'step_1_3_coin':
-        // Target is on left sidebar -> place coach panel center-right
         return 'top-1/2 -translate-y-1/2 right-3 sm:right-6';
       case 'step_2_deck':
-        // Target is bottom-right deck -> place coach panel top-left / center-left
         return 'top-16 left-3 sm:left-24';
       case 'step_3_hand':
-        // Target is bottom hand -> place coach panel top-center
         return 'top-14 left-1/2 -translate-x-1/2';
       case 'step_4_board':
-        // Target is center table -> place coach panel top-right or top-center compact
         return 'top-12 right-3 sm:right-5';
       case 'step_5_hp':
-        // Target is bottom-left HP -> place coach panel center-right
         return 'top-1/2 -translate-y-1/2 right-3 sm:right-6';
       case 'step_6_orb':
-        // Target is right/center orb -> place coach panel left-center
         return 'top-16 left-3 sm:left-24';
       default:
         return 'top-16 right-4';
@@ -923,19 +985,19 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
 
   return (
     <>
-      {/* Dimmed backdrop for reading steps (non-interactive steps block board misclicks; action steps stay click-through!) */}
-      {!stepMeta.requiresBoardAction && (
+      {/* Transparent click-blocker during reading/review steps — ZERO blur so focused elements stay 100% razor-sharp! */}
+      {!isBoardInteractionEnabled && (
         <div
           aria-hidden="true"
-          className="fixed inset-0 z-[85] bg-slate-950/55 backdrop-blur-[1px]"
+          className="fixed inset-0 z-[85] bg-transparent"
         />
       )}
 
-      {/* Luminous Spotlight Ring around the active UI element */}
+      {/* Crisp Cutout Spotlight Ring: darkens ONLY outside the target rectangle, with zero blur on the highlighted element */}
       {spotlightRect && (
         <div
           aria-hidden="true"
-          className="fixed z-[88] pointer-events-none rounded-2xl border-2 border-emerald-300 shadow-[0_0_0_9999px_rgba(2,6,23,0.52),0_0_30px_rgba(52,211,153,0.85)] transition-all duration-300 ease-out"
+          className="fixed z-[88] pointer-events-none rounded-2xl border-2 border-emerald-300 shadow-[0_0_0_9999px_rgba(2,6,23,0.62),0_0_26px_rgba(52,211,153,0.85)] transition-all duration-300 ease-out"
           style={{
             top: spotlightRect.top,
             left: spotlightRect.left,
@@ -944,14 +1006,18 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           }}
         >
           <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-emerald-400 text-stone-950 text-[9px] font-mono font-black uppercase tracking-wider shadow-lg whitespace-nowrap">
-            {stepMeta.requiresBoardAction ? 'Interaja Aqui' : 'Foco do Passo'}
+            {isBoardInteractionEnabled
+              ? 'Interaja Aqui'
+              : isReviewingPastStep
+              ? 'Releitura'
+              : 'Foco do Passo'}
           </span>
         </div>
       )}
 
-      {/* Mandatory Tutorial Coach Card — ZERO Skip / ZERO Close buttons */}
+      {/* Mandatory Tutorial Coach Card — ZERO Skip / ZERO Close buttons, WITH Back & Resume Re-read Navigation */}
       <div
-        className={`fixed z-[96] w-[min(92vw,420px)] max-h-[82dvh] overflow-y-auto rounded-2xl border-2 border-emerald-400/80 bg-gradient-to-b from-[#0a211b]/98 via-[#09121e]/98 to-[#050912]/98 backdrop-blur-md p-3.5 sm:p-4 text-stone-100 shadow-[0_20px_60px_rgba(0,0,0,0.92),0_0_32px_rgba(16,185,129,0.28)] ${coachPositionClass}`}
+        className={`fixed z-[96] w-[min(92vw,430px)] max-h-[82dvh] overflow-y-auto rounded-2xl border-2 border-emerald-400/80 bg-gradient-to-b from-[#0a211b]/98 via-[#09121e]/98 to-[#050912]/98 p-3.5 sm:p-4 text-stone-100 shadow-[0_20px_60px_rgba(0,0,0,0.92),0_0_32px_rgba(16,185,129,0.28)] ${coachPositionClass}`}
       >
         {/* Top Progress Header */}
         <div className="flex items-center justify-between gap-2 mb-2">
@@ -960,8 +1026,10 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
               {stepMeta.icon}
             </div>
             <div className="min-w-0">
-              <span className="block text-[10px] font-mono font-black uppercase tracking-widest text-emerald-300">
-                {TUTORIAL_STEP_LABEL[step]} · Treinamento Obrigatório
+              <span className="block text-[10px] font-mono font-black uppercase tracking-wider text-emerald-300">
+                {TUTORIAL_STEP_LABEL[viewingStep]}
+                {' · '}
+                {isReviewingPastStep ? 'Modo de Releitura' : 'Treinamento'}
               </span>
               <div className="w-28 h-1.5 rounded-full bg-stone-800 overflow-hidden mt-0.5">
                 <div
@@ -971,8 +1039,8 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
               </div>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-400/40 text-[10px] font-mono font-bold text-amber-200 shrink-0">
-            <Sparkles size={10} /> +250 Ouro
+          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-amber-200 tabular-nums shrink-0">
+            <Sparkles size={11} className="text-amber-300" /> +250 Ouro
           </span>
         </div>
 
@@ -1013,10 +1081,12 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           </div>
         )}
 
-        {/* Mandatory Action Callout */}
+        {/* Action Callout OR Re-read Status Banner */}
         <div
           className={`mt-3 px-2.5 py-2 rounded-xl border text-[11px] font-semibold leading-snug flex items-start gap-2 ${
-            stepMeta.requiresBoardAction
+            isReviewingPastStep
+              ? 'bg-sky-950/60 border-sky-400/45 text-sky-100'
+              : stepMeta.requiresBoardAction
               ? 'bg-emerald-950/75 border-emerald-400/60 text-emerald-100'
               : 'bg-stone-900/80 border-white/10 text-stone-300'
           }`}
@@ -1024,28 +1094,72 @@ export const CombatTutorialOverlay: React.FC<CombatTutorialOverlayProps> = ({
           <CheckCircle2
             size={14}
             className={`shrink-0 mt-0.5 ${
-              stepMeta.requiresBoardAction ? 'text-emerald-300 animate-pulse' : 'text-amber-300'
+              isReviewingPastStep
+                ? 'text-sky-300'
+                : stepMeta.requiresBoardAction
+                ? 'text-emerald-300 animate-pulse'
+                : 'text-amber-300'
             }`}
           />
-          <span>{stepMeta.actionHint}</span>
+          <span>
+            {isReviewingPastStep
+              ? `Você está relendo este passo sem precisar repetir ações. Seu passo ativo é ${TUTORIAL_STEP_LABEL[progressStep]}.`
+              : stepMeta.actionHint}
+          </span>
         </div>
 
-        {/* Next Button ONLY for reading steps (action steps MUST be completed on the board) */}
-        {!stepMeta.requiresBoardAction && stepMeta.nextStep && (
-          <div className="mt-3 flex justify-end">
+        {/* Footer Controls: Back (Re-read) + Forward / Resume Current Step */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          {viewingIndex > 0 ? (
             <button
               type="button"
-              onClick={() => {
-                sound.playSummon();
-                setStep(stepMeta.nextStep!);
-              }}
-              className="w-full sm:w-auto min-h-[40px] px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-amber-400 hover:brightness-110 text-stone-950 font-serif font-black text-xs uppercase tracking-wider shadow-[0_6px_20px_rgba(16,185,129,0.4)] cursor-pointer flex items-center justify-center gap-1.5"
+              onClick={handleGoBack}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-900/95 hover:bg-stone-800 border border-stone-600/80 text-stone-200 hover:text-amber-100 font-serif font-bold text-xs cursor-pointer flex items-center gap-1 whitespace-nowrap transition-colors"
             >
-              <span>{stepMeta.nextButtonLabel}</span>
-              <ChevronRight size={15} />
+              <ChevronLeft size={14} />
+              <span>Voltar</span>
             </button>
+          ) : (
+            <div />
+          )}
+
+          <div className="flex items-center gap-2 ml-auto">
+            {isReviewingPastStep ? (
+              <>
+                {viewingIndex + 1 < progressIndex && (
+                  <button
+                    type="button"
+                    onClick={handleStepForwardInReview}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-stone-900/95 hover:bg-stone-800 border border-stone-600/80 text-stone-200 hover:text-emerald-200 font-serif font-bold text-xs cursor-pointer flex items-center gap-1 whitespace-nowrap transition-colors"
+                  >
+                    <span>Próximo</span>
+                    <ChevronRight size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleResumeCurrentStep}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-amber-400 hover:brightness-110 text-stone-950 font-serif font-black text-xs uppercase tracking-wider shadow-[0_6px_18px_rgba(16,185,129,0.38)] cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <RotateCcw size={13} />
+                  <span>Retomar passo atual</span>
+                </button>
+              </>
+            ) : (
+              !stepMeta.requiresBoardAction &&
+              stepMeta.nextStep && (
+                <button
+                  type="button"
+                  onClick={() => handleAdvanceReadingStep(stepMeta.nextStep!)}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-amber-400 hover:brightness-110 text-stone-950 font-serif font-black text-xs uppercase tracking-wider shadow-[0_6px_20px_rgba(16,185,129,0.4)] cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
+                >
+                  <span>{stepMeta.nextButtonLabel}</span>
+                  <ChevronRight size={15} />
+                </button>
+              )
+            )}
           </div>
-        )}
+        </div>
       </div>
     </>
   );

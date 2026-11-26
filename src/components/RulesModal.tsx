@@ -280,7 +280,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({
               </div>
               <div className="p-2 rounded bg-slate-900 border border-slate-600/40 text-slate-300">
                 <span className="font-bold flex items-center gap-1 text-slate-200">
-                  ⚔️ Neutro
+                  🧭 Neutro
                 </span>
                 <span className="text-[10px] text-stone-300 block">Dano = Ataque</span>
                 <span className="text-[10px] text-slate-300">+100% Poder em Vida, Ataque e Defesa</span>
@@ -309,7 +309,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({
                 <div>• <strong>Cósmico:</strong> Poder</div>
                 <div>• <strong>Telúrico & Neutro:</strong> Ataque</div>
               </div>
-              <div className="text-cyan-300 font-bold pt-1">❄️ Passiva Gelo, 🌿 Telúrico & ⚔️ Neutro:</div>
+              <div className="text-cyan-300 font-bold pt-1">❄️ Passiva Gelo, 🌿 Telúrico & 🧭 Neutro:</div>
               <div className="pl-3 text-stone-300 space-y-1">
                 <div>• <strong>Gelo:</strong> Recebe <strong>+50% do Poder como Defesa extra</strong> e causa <strong>+25% do maior pico de Defesa acumulado</strong> como dano adicional!</div>
                 <div>• <strong>Telúrico:</strong> Recebe <strong>+50% do Poder como Vida extra</strong> e <strong>+50% do Poder como Defesa extra</strong> de forma viva conforme seu Poder atual!</div>

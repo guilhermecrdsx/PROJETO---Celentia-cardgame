@@ -4,6 +4,7 @@ import type {
   GameLogEntry,
   PlayerState,
 } from './game.ts';
+import type { PlaymatId, CardBackId } from '../data/economy.ts';
 
 export type PvpSeat = 'host' | 'guest';
 export type PvpMatchType = 'normal' | 'ranked';
@@ -25,6 +26,8 @@ export interface PvpParticipantDTO {
   rankPoints: number;
   rankTier: string;
   avatarId: string;
+  equippedPlaymat?: PlaymatId;
+  equippedCardBack?: CardBackId;
   deckName: string;
   deckCardIds: string[];
   ready: boolean;
@@ -118,6 +121,8 @@ export interface OnlineMatchBootstrap {
   opponentRank: string;
   opponentLevel: number;
   opponentAvatarId?: string;
+  opponentPlaymat?: PlaymatId;
+  opponentCardBack?: CardBackId;
   initialSnapshot: OnlineMatchSnapshot;
 }
 

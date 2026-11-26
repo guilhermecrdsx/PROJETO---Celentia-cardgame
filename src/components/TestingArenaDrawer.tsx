@@ -17,7 +17,7 @@ import {
   Droplets,
   Mountain,
   Zap,
-  CircleDot,
+  Compass,
   Crown,
   Atom,
   Snowflake,
@@ -56,7 +56,7 @@ const ELEMENTS: { label: string; value: ElementType | 'all'; icon: React.ReactNo
   { label: 'Elétrico', value: 'Elétrico', icon: <Zap size={14} />, color: 'text-amber-400' },
   { label: 'Divino', value: 'Divino', icon: <Sun size={14} />, color: 'text-amber-300' },
   { label: 'Sombrio', value: 'Sombrio', icon: <Sparkles size={14} />, color: 'text-fuchsia-400' },
-  { label: 'Neutro', value: 'Neutro', icon: <CircleDot size={14} />, color: 'text-stone-400' },
+  { label: 'Neutro', value: 'Neutro', icon: <Compass size={14} />, color: 'text-stone-400' },
 ];
 
 export const TestingArenaDrawer: React.FC<TestingArenaDrawerProps> = ({
